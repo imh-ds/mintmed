@@ -1,0 +1,140 @@
+name: Sharded validation benchmark
+
+# Manual dispatch for validation runners that implement the aggregation
+# contract documented in scripts/aggregate_shards.py. Shard dimensions are
+# explicit inputs because the mediation release matrix has not been frozen yet.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_module:
+        description: "Import path of the shardable runner module"
+        required: true
+        default: "mintmed.experiments.mediation_validation"
+      config:
+        description: "Locked validation configuration"
+        required: true
+        default: "configs/mediation_validation.yaml"
+      dim1_flag:
+        description: "CLI flag for the first shard dimension"
+        required: true
+      dim1_values:
+        description: "Comma-separated values for the first shard dimension"
+        required: true
+      dim2_flag:
+        description: "CLI flag for the second shard dimension"
+        required: true
+      dim2_values:
+        description: "Comma-separated values for the second shard dimension"
+        required: true
+      dim3_flag:
+        description: "CLI flag for an optional third shard dimension"
+        required: false
+        default: ""
+      dim3_values:
+        description: "Comma-separated values for the optional third shard dimension"
+        required: false
+        default: ""
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - id: build
+        env:
+          DIM1_VALUES: ${{ inputs.dim1_values }}
+          DIM2_VALUES: ${{ inputs.dim2_values }}
+          DIM3_VALUES: ${{ inputs.dim3_values }}
+        run: |
+          python3 <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+
+          values_1 = os.environ["DIM1_VALUES"].split(",")
+          values_2 = os.environ["DIM2_VALUES"].split(",")
+          values_3 = os.environ.get("DIM3_VALUES", "")
+          if values_3:
+              combinations = [
+                  {"v1": first, "v2": second, "v3": third}
+                  for first in values_1
+                  for second in values_2
+                  for third in values_3.split(",")
+              ]
+          else:
+              combinations = [
+                  {"v1": first, "v2": second, "v3": ""}
+                  for first in values_1
+                  for second in values_2
+              ]
+          print("matrix=" + json.dumps({"include": combinations}))
+          PY
+
+  shard:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      NUMEXPR_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - env:
+          RUNNER_MODULE: ${{ inputs.runner_module }}
+          CONFIG: ${{ inputs.config }}
+          DIM1_FLAG: ${{ inputs.dim1_flag }}
+          DIM2_FLAG: ${{ inputs.dim2_flag }}
+          DIM3_FLAG: ${{ inputs.dim3_flag }}
+          V1: ${{ matrix.v1 }}
+          V2: ${{ matrix.v2 }}
+          V3: ${{ matrix.v3 }}
+        run: |
+          set -e
+          command=(python -m "$RUNNER_MODULE" --config "$CONFIG" --output results/generated/shard "$DIM1_FLAG" "$V1" "$DIM2_FLAG" "$V2")
+          if [ -n "$V3" ]; then
+            command+=("$DIM3_FLAG" "$V3")
+          fi
+          command+=(--no-report)
+          "${command[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: "shard-${{ matrix.v1 }}-${{ matrix.v2 }}${{ matrix.v3 != '' && format('-{0}', matrix.v3) || '' }}"
+          path: results/generated/shard
+          retention-days: 14
+
+  aggregate:
+    needs: shard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "shard-*"
+          path: shards
+      - env:
+          RUNNER_MODULE: ${{ inputs.runner_module }}
+          CONFIG: ${{ inputs.config }}
+        run: >
+          python scripts/aggregate_shards.py
+          --module "$RUNNER_MODULE"
+          --config "$CONFIG"
+          --shards-dir shards
+          --output results/generated/aggregated
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aggregated-benchmark
+          path: results/generated/aggregated
+          retention-days: 90
