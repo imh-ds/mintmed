@@ -182,3 +182,6 @@ cython_debug/
 
 # Outline folder
 outline/
+
+# Generated validation evidence
+results/generated/
