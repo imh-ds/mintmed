@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 import warnings
-from types import MappingProxyType
 from typing import Any, Protocol
 
 import numpy as np
@@ -17,7 +16,7 @@ from statsmodels.tools.sm_exceptions import PerfectSeparationError
 from .design import FrozenDesign, fit_design, transform_design
 from .diagnostics import NodeFitError
 from .spec import CompiledNodePlan, Family
-from .types import AnalysisStatus
+from .types import AnalysisStatus, _freeze_mapping
 
 
 PredictorInput = pd.DataFrame | np.ndarray
@@ -54,12 +53,6 @@ class NodeFitDiagnostics:
         object.__setattr__(self, "status", AnalysisStatus(self.status))
         object.__setattr__(self, "warnings", tuple(self.warnings))
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
-
-
-def _freeze_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
-    """Return a defensive read-only metadata mapping."""
-
-    return MappingProxyType(dict(value))
 
 
 class FittedNode(Protocol):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -409,6 +411,33 @@ def test_node_fit_diagnostics_freezes_metadata() -> None:
     assert diagnostics.metadata["iteration"] == 1
     with pytest.raises(TypeError):
         diagnostics.metadata["new"] = True  # type: ignore[index]
+
+
+def test_node_fit_diagnostics_is_dataclass_serializable() -> None:
+    diagnostics = NodeFitDiagnostics(
+        response="outcome",
+        family=Family.GAUSSIAN,
+        status=AnalysisStatus.OK,
+        code="ok",
+        message="fit succeeded",
+        n_rows=1,
+        rank=1,
+        parameter_count=1,
+        converged=True,
+        coefficients_finite=True,
+        df_resid=1.0,
+        sigma=1.0,
+        log_likelihood=-1.0,
+        deviance=None,
+        events=None,
+        non_events=None,
+        warnings=(),
+        metadata={"iteration": 1},
+    )
+
+    serialized = asdict(diagnostics)
+
+    assert serialized["metadata"] == {"iteration": 1}
 
 
 def test_node_fit_error_preserves_context_and_fit_failed_status() -> None:
