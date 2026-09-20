@@ -467,6 +467,7 @@ def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
         "bootstrap": spec.computation.bootstrap,
         "integration_draws": spec.computation.integration_draws,
         "integration_tolerance": spec.computation.integration_tolerance,
+        "information": spec.computation.information,
         "software_versions": {"mintmed": __version__, "pandas": pd.__version__},
     }
     analysis_hash = hashlib.sha256(
@@ -635,6 +636,7 @@ def _parse_template_mapping(raw: Any) -> TemplateSpec:
         baseline,
         moderators,
         participant_id,
+        mediator_order,
     )
     contrast = _parse_contrast(
         root.get("contrast"),
@@ -798,6 +800,7 @@ def _parse_nodes(
     baseline: tuple[VariableSpec, ...],
     moderators: tuple[VariableSpec, ...],
     participant_id: VariableSpec | None,
+    mediator_order: tuple[str, ...],
 ) -> tuple[NodeSpec, ...]:
     mapping = _mapping(value, "models", "models")
     expected = {item.name for item in (*mediators, outcome)}
@@ -821,7 +824,11 @@ def _parse_nodes(
             *((participant_id,) if participant_id is not None else ()),
         )
     }
-    mediator_index = {item.name: index for index, item in enumerate(mediators)}
+    mediator_index = {name: index for index, name in enumerate(mediator_order)}
+    ordered_mediators = tuple(
+        next(item for item in mediators if item.name == name)
+        for name in mediator_order
+    )
     nodes = []
     for response in (*[item.name for item in mediators], outcome.name):
         path = f"models.{response}"
@@ -859,7 +866,18 @@ def _parse_nodes(
         if len(term_names) != len(set(term_names)):
             _fail("duplicate_term", f"{path}.terms", "each predictor may have one declared main term")
         for index, term in enumerate(terms):
-            _validate_term(term, term_names, variables, exposure, mediators, outcome, response, mediator_index, path, index)
+            _validate_term(
+                term,
+                term_names,
+                variables,
+                exposure,
+                ordered_mediators,
+                outcome,
+                response,
+                mediator_index,
+                path,
+                index,
+            )
         for index, interaction in enumerate(interactions):
             if interaction.left == interaction.right:
                 _fail("malformed_interaction", f"{path}.interactions[{index}]", "interaction members must differ")
@@ -1003,7 +1021,12 @@ def _validate_model(spec: ModelSpec) -> None:
     if set(node_names) != set(expected_names):
         _fail("invalid_model_nodes", "models", "models must contain exactly all mediators and the outcome")
     variables = {item.name: item for item in all_variables}
-    mediator_index = {item.name: index for index, item in enumerate(spec.mediators)}
+    mediator_index = {
+        name: index for index, name in enumerate(spec.scientific.mediator_order)
+    }
+    ordered_mediators = tuple(
+        variables[name] for name in spec.scientific.mediator_order
+    )
     for node in spec.nodes:
         response_variable = variables.get(node.response)
         if response_variable is None:
@@ -1027,7 +1050,7 @@ def _validate_model(spec: ModelSpec) -> None:
                 term_names,
                 variables,
                 spec.exposure,
-                spec.mediators,
+                ordered_mediators,
                 spec.outcome,
                 node.response,
                 mediator_index,

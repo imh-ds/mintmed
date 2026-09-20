@@ -170,6 +170,36 @@ def test_nodes_are_ordered_by_mediator_order_then_outcome(valid_frame, valid_spe
     )
 
 
+def test_mediator_declaration_order_does_not_replace_factorization_order(
+    valid_frame, valid_spec
+) -> None:
+    reordered = replace(
+        valid_spec,
+        mediators=(valid_spec.mediators[1], valid_spec.mediators[0]),
+    )
+
+    plan = estimate_plan(valid_frame, reordered)
+
+    assert tuple(node.response for node in plan.nodes) == (
+        "efficacy",
+        "coping",
+        "distress",
+    )
+
+
+def test_information_setting_is_in_analysis_hash(valid_frame, valid_spec) -> None:
+    baseline = estimate_plan(valid_frame, valid_spec)
+    information = estimate_plan(
+        valid_frame,
+        replace(
+            valid_spec,
+            computation=replace(valid_spec.computation, information=True),
+        ),
+    )
+
+    assert baseline.analysis_hash != information.analysis_hash
+
+
 def test_missing_required_column_is_typed(valid_frame, valid_spec) -> None:
     frame = valid_frame.drop(columns=["efficacy"])
 
