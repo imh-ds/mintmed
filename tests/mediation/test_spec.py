@@ -325,3 +325,43 @@ def test_spec_objects_are_immutable_and_asdict_serializable(tmp_path: Path) -> N
 
     assert serialized["exposure"]["name"] == "condition"
     assert serialized["scientific"]["mediator_order"] == ("coping", "efficacy")
+
+
+def test_continuous_exposure_requires_explicit_values_without_levels(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["exposure"] = {
+        "name": "dose",
+        "type": "continuous",
+        "reference": 0.0,
+        "comparison": 1.5,
+    }
+    value["participant_id"] = {"name": "participant_id", "type": "categorical"}
+    value["scientific_edges"] = [
+        ["dose", "coping"],
+        ["dose", "efficacy"],
+        ["coping", "distress"],
+        ["efficacy", "distress"],
+    ]
+    for model in value["models"].values():  # type: ignore[union-attr]
+        for term in model["terms"]:  # type: ignore[index]
+            if term["variable"] == "condition":
+                term["variable"] = "dose"
+
+    spec = load_model_spec(_write_spec(tmp_path, value))
+
+    assert spec.exposure.observed_type == "continuous"
+    assert spec.exposure.levels == ()
+    assert spec.contrast.reference == 0.0
+    assert spec.participant_id is not None
+    assert spec.participant_id.name == "participant_id"
+    assert spec.participant_id.role is Role.PARTICIPANT_ID
+
+
+def test_continuous_exposure_without_contrast_is_rejected(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["exposure"] = {"name": "dose", "type": "continuous", "levels": []}
+
+    error = _error_for(tmp_path, value)
+
+    assert error.code == "missing_key"
+    assert error.path in {"exposure.reference", "exposure.comparison"}
