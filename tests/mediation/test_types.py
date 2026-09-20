@@ -1,5 +1,6 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, asdict
 from collections.abc import Mapping
+import json
 
 import pytest
 
@@ -150,3 +151,19 @@ def test_result_containers_normalize_sequences_and_nested_mappings() -> None:
     assert isinstance(result.effects, tuple)
     assert result.bootstrap is bootstrap
     assert result.diagnostics["rows_used"] == 100
+
+
+def test_effect_estimate_is_compatible_with_dataclass_json_serialization() -> None:
+    payload = asdict(
+        EffectEstimate(
+            name="TE",
+            estimate=0.5,
+            metadata={"estimand": "total_effect"},
+        )
+    )
+
+    encoded = json.dumps(payload)
+    decoded = json.loads(encoded)
+
+    assert decoded["metadata"] == {"estimand": "total_effect"}
+    assert decoded["status"] == "ok"
