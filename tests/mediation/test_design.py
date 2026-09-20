@@ -378,6 +378,27 @@ def test_transform_design_rejects_missing_columns() -> None:
     assert error.value.variable == "x"
 
 
+def test_transform_patsy_failure_includes_variable_context(monkeypatch) -> None:
+    node = make_node(terms=(TermSpec("x", TermKind.LINEAR),))
+    design = fit_design(pd.DataFrame({"x": [0.0, 1.0, 2.0]}), node)
+
+    def fail_transform(*args, **kwargs):
+        raise design_module.patsy.PatsyError('failed while evaluating Q("x")')
+
+    monkeypatch.setattr(
+        design_module.patsy,
+        "build_design_matrices",
+        fail_transform,
+    )
+
+    with pytest.raises(NodeFitError) as error:
+        transform_design(design, pd.DataFrame({"x": [3.0]}))
+
+    assert error.value.code == "transform_failed"
+    assert error.value.response == "outcome"
+    assert error.value.variable == "x"
+
+
 def test_transform_design_rejects_nonfinite_transformed_values() -> None:
     node = make_node(terms=(TermSpec("x", TermKind.LINEAR),))
     design = fit_design(pd.DataFrame({"x": [0.0, 1.0, 2.0]}), node)

@@ -227,6 +227,15 @@ def _missing_columns(data: pd.DataFrame, required: tuple[str, ...]) -> tuple[str
     return tuple(column for column in required if column not in data.columns)
 
 
+def _error_variable(message: str, required: tuple[str, ...]) -> str | None:
+    """Find a required variable named in an expected Patsy error message."""
+
+    for variable in required:
+        if variable in message or _quote_variable(variable) in message:
+            return variable
+    return required[0] if len(required) == 1 else None
+
+
 def _fit_error(
     *,
     code: str,
@@ -429,6 +438,7 @@ def transform_design(
         raise _fit_error(
             code="transform_failed",
             response=design.response,
+            variable=_error_variable(str(exc), required),
             message="Patsy could not transform the frozen design",
         ) from exc
 
