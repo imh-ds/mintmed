@@ -102,6 +102,20 @@ Each task entry should record:
 - **Verification:** Focused Task 5 run using the temporary environment and `PYTHONPATH=src` → `20 passed in 2.22s`; full suite using `PYTHONPATH=src;.` and explicit basetemp → `81 passed in 1.20s`; `python -m compileall -q src tests` passed; `pip check` → `No broken requirements found`; targeted Ruff on all changed source/test files → `All checks passed`; `git diff --check` passed. Repository-wide Ruff reported two pre-existing unused imports in `tests/mediation/test_spec.py` and no findings in the changed files. Final review was a self-review because no subagent tool is available; no Critical or Important findings remain and no Minor findings were deferred.
 - **Follow-up:** Task 5 is completed on schedule. Task 6 may consume `FrozenDesign.matrix`, `.columns`, `.rank`, `.response`, `.family`, and `.design_info` through `fit_design`/`transform_design`; it must not rebuild formulas, infer categories, recompute spline state, or bypass the frozen transform boundary. A pytest temporary directory created for verification could not be deleted because it was owned by the sandbox runtime; it is untracked and contains only generated test artifacts, not implementation files.
 
+#### Task 05 correction — preserve offending-variable context in transform failures
+
+- **Date:** 2026-09-20
+- **Task:** Task 5 — review correction.
+- **Status:** Completed.
+- **Schedule:** On schedule; correction completed in the same implementation window.
+- **Decision:** Populate `NodeFitError.variable` for generic Patsy transformation failures whenever the exception names a required variable or the frozen design has exactly one required variable.
+- **Rationale:** The Task 5 failure contract requires transform errors to identify the node and, when possible, the offending variable. The first implementation preserved the node but left the variable unset for generic Patsy errors. The narrow fix improves diagnostics without parsing arbitrary YAML or changing transform behavior.
+- **Actions:** Added `test_transform_patsy_failure_includes_variable_context`, observed the expected failure (`variable is None`), added `_error_variable(...)`, and committed the fix as `50b63e6` (`fix: include variable context in transform errors`).
+- **Evidence:** Focused Task 5 suite changed from `20 passed` to `21 passed`; the failing regression test passed after the fix. The final full-suite rerun is recorded in the Task 5 verification below.
+- **Files:** `src/mintmed/design.py`; `tests/mediation/test_design.py`; this decision log.
+- **Verification:** The regression test was red before implementation and green afterward. The targeted Ruff check and `git diff --check` passed for the changed files.
+- **Follow-up:** No further Task 5 behavior change is planned; Task 6 should use `NodeFitError.variable` when presenting node transform failures.
+
 ## Reusable entry template
 
 ### Task NN — Name
