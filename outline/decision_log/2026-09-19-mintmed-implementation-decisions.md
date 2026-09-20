@@ -111,9 +111,9 @@ Each task entry should record:
 - **Decision:** Populate `NodeFitError.variable` for generic Patsy transformation failures whenever the exception names a required variable or the frozen design has exactly one required variable.
 - **Rationale:** The Task 5 failure contract requires transform errors to identify the node and, when possible, the offending variable. The first implementation preserved the node but left the variable unset for generic Patsy errors. The narrow fix improves diagnostics without parsing arbitrary YAML or changing transform behavior.
 - **Actions:** Added `test_transform_patsy_failure_includes_variable_context`, observed the expected failure (`variable is None`), added `_error_variable(...)`, and committed the fix as `50b63e6` (`fix: include variable context in transform errors`).
-- **Evidence:** Focused Task 5 suite changed from `20 passed` to `21 passed`; the failing regression test passed after the fix. The final full-suite rerun is recorded in the Task 5 verification below.
+- **Evidence:** Focused Task 5 suite changed from `20 passed` to `21 passed`; the failing regression test passed after the fix. The final post-correction full suite passed `82 tests`.
 - **Files:** `src/mintmed/design.py`; `tests/mediation/test_design.py`; this decision log.
-- **Verification:** The regression test was red before implementation and green afterward. The targeted Ruff check and `git diff --check` passed for the changed files.
+- **Verification:** The regression test was red before implementation and green afterward. The final full suite using the temporary Python environment and explicit repository-local basetemp reported `82 passed in 1.11s`; targeted Ruff reported `All checks passed`, compileall passed, pip check reported `No broken requirements found`, and `git diff --check` passed.
 - **Follow-up:** No further Task 5 behavior change is planned; Task 6 should use `NodeFitError.variable` when presenting node transform failures.
 
 ## Reusable entry template
