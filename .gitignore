@@ -181,7 +181,9 @@ cython_debug/
 .cursorindexingignore
 
 # Outline folder
-outline/
+outline/*
+!outline/decision_log/
+!outline/decision_log/*.md
 
 # Generated validation evidence
 results/generated/
