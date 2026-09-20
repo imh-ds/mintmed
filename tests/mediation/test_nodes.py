@@ -8,9 +8,10 @@ import pytest
 import statsmodels.api as sm
 
 from mintmed.diagnostics import NodeFitError
-from mintmed.design import fit_design, transform_design
+from mintmed.design import transform_design
 from mintmed import models
 from mintmed.models import (
+    BernoulliNode,
     FittedNode,
     GaussianNode,
     NodeFitDiagnostics,
@@ -44,6 +45,15 @@ def gaussian_data() -> pd.DataFrame:
         {
             "outcome": [1.2, 2.1, 2.7, 3.8, 4.4, 5.3, 6.2, 7.1],
             "x": [-2.0, -1.5, -1.0, -0.25, 0.5, 1.0, 1.75, 2.5],
+        }
+    )
+
+
+def bernoulli_data() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "outcome": [0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0],
+            "x": [-2.0, -1.5, -1.0, -0.5, -0.2, 0.0, 0.2, 0.5, 0.8, 1.0, 1.5, 2.0],
         }
     )
 
@@ -213,6 +223,165 @@ def test_gaussian_rejects_invalid_noise_shape_and_values() -> None:
 
     assert shape_error.value.code == "invalid_noise"
     assert value_error.value.code == "invalid_noise"
+
+
+def test_bernoulli_fit_matches_statsmodels_and_records_events() -> None:
+    data = bernoulli_data()
+    node = make_node(family=Family.BERNOULLI)
+
+    fitted = fit_node(data, node)
+    expected = sm.GLM(
+        data["outcome"].to_numpy(),
+        fitted.design.matrix,
+        family=sm.families.Binomial(),
+    ).fit()
+
+    assert isinstance(fitted, BernoulliNode)
+    np.testing.assert_allclose(
+        fitted.coefficients,
+        expected.params,
+    )
+    np.testing.assert_allclose(
+        fitted.predict_mean(data),
+        expected.predict(fitted.design.matrix),
+    )
+    assert np.all((fitted.predict_mean(data) >= 0.0))
+    assert np.all((fitted.predict_mean(data) <= 1.0))
+    diagnostics = fitted.diagnostics()
+    assert diagnostics.status is AnalysisStatus.OK
+    assert diagnostics.converged is True
+    assert diagnostics.coefficients_finite is True
+    assert diagnostics.events == 6
+    assert diagnostics.non_events == 6
+    assert np.isfinite(diagnostics.log_likelihood)
+    assert np.isfinite(diagnostics.deviance)
+
+
+def test_bernoulli_sampling_uses_uniform_thresholds_and_generator_blocks() -> None:
+    data = bernoulli_data()
+    fitted = fit_node(data, make_node(family=Family.BERNOULLI))
+    probability = fitted.predict_mean(data)
+    uniform = np.linspace(0.0, 1.0, len(data), endpoint=False)
+    block_uniform = np.stack([uniform, 1.0 - uniform], axis=1)
+
+    np.testing.assert_array_equal(
+        fitted.sample(data, uniform),
+        (uniform < probability).astype(float),
+    )
+    np.testing.assert_array_equal(
+        fitted.sample(data, block_uniform),
+        (block_uniform < probability[:, None]).astype(float),
+    )
+    first = fitted.sample(data, np.random.default_rng(23), size=4)
+    second = fitted.sample(data, np.random.default_rng(23), size=4)
+    assert first.shape == (len(data), 4)
+    np.testing.assert_array_equal(first, second)
+    assert set(np.unique(first)).issubset({0.0, 1.0})
+
+
+def test_bernoulli_log_density_matches_clipped_binomial_formula() -> None:
+    data = bernoulli_data()
+    fitted = fit_node(data, make_node(family=Family.BERNOULLI))
+    observed = data["outcome"].to_numpy(dtype=float)
+    probability = fitted.predict_mean(data)
+    eps = np.finfo(float).eps
+    safe_probability = np.clip(probability, eps, 1.0 - eps)
+    expected = (
+        observed * np.log(safe_probability)
+        + (1.0 - observed) * np.log1p(-safe_probability)
+    )
+
+    np.testing.assert_allclose(fitted.log_density(data, observed), expected)
+
+
+def test_bernoulli_rejects_nonbinary_response() -> None:
+    data = bernoulli_data()
+    data.loc[0, "outcome"] = 2
+
+    with pytest.raises(NodeFitError) as error:
+        fit_node(data, make_node(family=Family.BERNOULLI))
+
+    assert error.value.code == "invalid_response"
+    assert error.value.response == "outcome"
+    assert error.value.details["unique_values"] == (0.0, 1.0, 2.0)
+
+
+def test_bernoulli_rejects_perfect_separation_without_regularization(monkeypatch) -> None:
+    data = pd.DataFrame(
+        {
+            "outcome": [0, 0, 0, 1, 1, 1],
+            "x": [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0],
+        }
+    )
+    monkeypatch.setattr(
+        sm.GLM,
+        "fit_regularized",
+        lambda *args, **kwargs: pytest.fail("regularized fallback is forbidden"),
+    )
+
+    with pytest.raises(NodeFitError) as error:
+        fit_node(data, make_node(family=Family.BERNOULLI))
+
+    assert error.value.code == "separation"
+    assert error.value.response == "outcome"
+    assert (
+        "statsmodels_message" in error.value.details
+        or "warnings" in error.value.details
+    )
+
+
+def test_bernoulli_rejects_nonconvergence_with_solver_context(monkeypatch) -> None:
+    class NonconvergedResult:
+        converged = False
+        params = np.array([0.1, 0.2])
+        llf = -5.0
+        deviance = 10.0
+        fit_history = {"iteration": 7}
+        mle_retvals = {"message": "forced nonconvergence"}
+
+        def cov_params(self):
+            return np.eye(2)
+
+    monkeypatch.setattr(sm.GLM, "fit", lambda self, *args, **kwargs: NonconvergedResult())
+
+    with pytest.raises(NodeFitError) as error:
+        fit_node(bernoulli_data(), make_node(family=Family.BERNOULLI))
+
+    assert error.value.code == "nonconvergence"
+    assert error.value.details["converged"] is False
+    assert error.value.details["statsmodels_message"] == "forced nonconvergence"
+
+
+def test_bernoulli_rejects_nonfinite_coefficients(monkeypatch) -> None:
+    class OverflowResult:
+        converged = True
+        params = np.array([np.inf, 0.2])
+        llf = -5.0
+        deviance = 10.0
+        fittedvalues = np.array([0.5] * 12)
+
+        def cov_params(self):
+            return np.eye(2)
+
+    monkeypatch.setattr(sm.GLM, "fit", lambda self, *args, **kwargs: OverflowResult())
+
+    with pytest.raises(NodeFitError) as error:
+        fit_node(bernoulli_data(), make_node(family=Family.BERNOULLI))
+
+    assert error.value.code == "numerical_overflow"
+    assert error.value.details["metric"] == "coefficients"
+
+
+def test_bernoulli_rejects_invalid_noise_and_observed_values() -> None:
+    fitted = fit_node(bernoulli_data(), make_node(family=Family.BERNOULLI))
+
+    with pytest.raises(NodeFitError) as noise_error:
+        fitted.sample(bernoulli_data(), np.full(len(bernoulli_data()), 1.1))
+    with pytest.raises(NodeFitError) as observed_error:
+        fitted.log_density(bernoulli_data(), np.full(len(bernoulli_data()), 2.0))
+
+    assert noise_error.value.code == "invalid_noise"
+    assert observed_error.value.code == "invalid_observed"
 
 
 def test_node_fit_diagnostics_freezes_metadata() -> None:

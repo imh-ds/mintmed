@@ -11,6 +11,8 @@ from typing import Any, Protocol
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from scipy.special import expit
+from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
 from .design import FrozenDesign, fit_design, transform_design
 from .diagnostics import NodeFitError
@@ -160,6 +162,15 @@ def _training_response(
             details={
                 "nonfinite_count": int((~finite).sum()),
                 "n_rows": int(values.size),
+            },
+        )
+    if node.family is Family.BERNOULLI and not np.isin(values, (0.0, 1.0)).all():
+        raise _node_error(
+            node,
+            code="invalid_response",
+            message="Bernoulli response must contain only 0 and 1",
+            details={
+                "unique_values": tuple(float(value) for value in np.unique(values)),
             },
         )
     return values
@@ -476,6 +487,92 @@ class GaussianNode(_NodeOperations):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class BernoulliNode(_NodeOperations):
+    """Fitted Bernoulli logit conditional node."""
+
+    response: str
+    family: Family
+    design: FrozenDesign
+    coefficients: np.ndarray
+    parameter_count: int
+    converged: bool
+    _fit_diagnostics: NodeFitDiagnostics = field(repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "family", Family(self.family))
+        coefficients = np.array(self.coefficients, dtype=float, copy=True)
+        coefficients.setflags(write=False)
+        object.__setattr__(self, "coefficients", coefficients)
+        object.__setattr__(self, "parameter_count", int(self.parameter_count))
+
+    def predict_mean(self, predictors: PredictorInput) -> np.ndarray:
+        matrix, _ = self._predictor_matrix(predictors)
+        probability = expit(matrix @ self.coefficients)
+        if probability.ndim != 1 or not np.isfinite(probability).all():
+            raise _node_error(
+                self.design,
+                code="prediction_failed",
+                message="Bernoulli prediction is not a finite one-dimensional vector",
+                columns=self.design.columns,
+            )
+        return np.asarray(probability, dtype=float)
+
+    def sample(
+        self,
+        predictors: PredictorInput,
+        source: NoiseSource,
+        size: SampleSize = None,
+    ) -> np.ndarray:
+        probability = self.predict_mean(predictors)
+        noise = _materialize_noise(
+            self.design,
+            source,
+            len(probability),
+            size,
+            Family.BERNOULLI,
+        )
+        probability_shape = (len(probability),) + (1,) * (noise.ndim - 1)
+        return (
+            noise < probability.reshape(probability_shape)
+        ).astype(float)
+
+    def log_density(
+        self,
+        predictors: PredictorInput,
+        observed: np.ndarray,
+    ) -> np.ndarray:
+        probability = self.predict_mean(predictors)
+        try:
+            values = np.asarray(observed, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise _node_error(
+                self.design,
+                code="invalid_observed",
+                message="observed Bernoulli values must be numeric",
+            ) from exc
+        if (
+            values.shape != probability.shape
+            or not np.isfinite(values).all()
+            or not np.isin(values, (0.0, 1.0)).all()
+        ):
+            raise _node_error(
+                self.design,
+                code="invalid_observed",
+                message="observed Bernoulli values must be finite binary values",
+                details={
+                    "expected_shape": tuple(probability.shape),
+                    "observed_shape": tuple(values.shape),
+                },
+            )
+        eps = np.finfo(float).eps
+        safe_probability = np.clip(probability, eps, 1.0 - eps)
+        return (
+            values * np.log(safe_probability)
+            + (1.0 - values) * np.log1p(-safe_probability)
+        )
+
+
 def _fit_gaussian(
     response: np.ndarray,
     design: FrozenDesign,
@@ -594,8 +691,211 @@ def _fit_gaussian(
     )
 
 
-class BernoulliNode:
-    """Placeholder concrete node filled by the Bernoulli implementation step."""
+def _result_message(result: Any) -> str | None:
+    """Extract the stable solver message exposed by Statsmodels results."""
+
+    retvals = getattr(result, "mle_retvals", None)
+    if isinstance(retvals, Mapping) and retvals.get("message") is not None:
+        return str(retvals["message"])
+    history = getattr(result, "fit_history", None)
+    if isinstance(history, Mapping) and history.get("message") is not None:
+        return str(history["message"])
+    return None
+
+
+def _separation_error(
+    design: FrozenDesign,
+    *,
+    message: str,
+    warning_text: tuple[str, ...],
+) -> NodeFitError:
+    """Build a separation failure retaining Statsmodels context."""
+
+    return _node_error(
+        design,
+        code="separation",
+        message="Statsmodels detected perfect or quasi separation",
+        columns=design.columns,
+        details={
+            "statsmodels_message": message,
+            "warnings": warning_text,
+        },
+    )
+
+
+def _fit_bernoulli(
+    response: np.ndarray,
+    design: FrozenDesign,
+) -> BernoulliNode:
+    """Fit and validate one Bernoulli Binomial GLM result."""
+
+    events = int(response.sum())
+    non_events = int(response.size - events)
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        try:
+            result = sm.GLM(
+                response,
+                design.matrix,
+                family=sm.families.Binomial(),
+                missing="raise",
+            ).fit(maxiter=100, disp=0)
+        except PerfectSeparationError as exc:
+            warning_text = tuple(str(item.message) for item in captured)
+            raise _separation_error(
+                design,
+                message=str(exc),
+                warning_text=warning_text,
+            ) from exc
+        except (TypeError, ValueError, np.linalg.LinAlgError) as exc:
+            warning_text = tuple(str(item.message) for item in captured)
+            message = str(exc)
+            if "separation" in message.lower():
+                raise _separation_error(
+                    design,
+                    message=message,
+                    warning_text=warning_text,
+                ) from exc
+            raise _node_error(
+                design,
+                code="numerical_overflow",
+                message="Statsmodels GLM could not produce a fit",
+                columns=design.columns,
+                details={
+                    "statsmodels_message": message,
+                    "warnings": warning_text,
+                },
+            ) from exc
+
+    warning_text = tuple(str(item.message) for item in captured)
+    warning_blob = " ".join(warning_text).lower()
+    result_message = _result_message(result)
+    if "separation" in warning_blob or (
+        result_message is not None and "separation" in result_message.lower()
+    ):
+        raise _separation_error(
+            design,
+            message=result_message or "separation warning",
+            warning_text=warning_text,
+        )
+    converged = bool(getattr(result, "converged", False))
+    if not converged:
+        details: dict[str, Any] = {
+            "converged": converged,
+            "warnings": warning_text,
+            "statsmodels_message": result_message or "solver did not converge",
+        }
+        history = getattr(result, "fit_history", None)
+        if isinstance(history, Mapping) and history.get("iteration") is not None:
+            details["iterations"] = int(history["iteration"])
+        raise _node_error(
+            design,
+            code="nonconvergence",
+            message="Statsmodels Bernoulli GLM did not converge",
+            columns=design.columns,
+            details=details,
+        )
+
+    coefficients = np.asarray(result.params, dtype=float)
+    if coefficients.shape != (len(design.columns),) or not np.isfinite(coefficients).all():
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Bernoulli fit contains nonfinite coefficients",
+            columns=design.columns,
+            details={
+                "metric": "coefficients",
+                "warnings": warning_text,
+            },
+        )
+    covariance = np.asarray(result.cov_params(), dtype=float)
+    if not np.isfinite(covariance).all():
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Bernoulli fit covariance is nonfinite",
+            columns=design.columns,
+            details={
+                "metric": "covariance",
+                "warnings": warning_text,
+            },
+        )
+    probabilities = np.asarray(result.predict(design.matrix), dtype=float)
+    if not np.isfinite(probabilities).all():
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Bernoulli fitted probabilities are nonfinite",
+            columns=design.columns,
+            details={
+                "metric": "fitted_probabilities",
+                "warnings": warning_text,
+            },
+        )
+    if np.any(probabilities <= 0.0) or np.any(probabilities >= 1.0):
+        raise _node_error(
+            design,
+            code="separation",
+            message="Bernoulli fitted probabilities are saturated",
+            columns=design.columns,
+            details={
+                "metric": "fitted_probabilities",
+                "warnings": warning_text,
+            },
+        )
+    log_likelihood = float(result.llf)
+    deviance = float(result.deviance)
+    if not np.isfinite(log_likelihood) or not np.isfinite(deviance):
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Bernoulli fit likelihood metadata is nonfinite",
+            columns=design.columns,
+            details={
+                "metric": "likelihood_metadata",
+                "log_likelihood": log_likelihood,
+                "deviance": deviance,
+                "warnings": warning_text,
+            },
+        )
+    history = getattr(result, "fit_history", None)
+    iterations = (
+        int(history["iteration"])
+        if isinstance(history, Mapping) and history.get("iteration") is not None
+        else None
+    )
+    diagnostics = NodeFitDiagnostics(
+        response=design.response,
+        family=Family.BERNOULLI,
+        status=AnalysisStatus.OK,
+        code="ok",
+        message=f"Bernoulli GLM fit succeeded for {design.response}",
+        n_rows=design.n_rows,
+        rank=design.rank,
+        parameter_count=len(design.columns),
+        converged=True,
+        coefficients_finite=True,
+        df_resid=None,
+        sigma=None,
+        log_likelihood=log_likelihood,
+        deviance=deviance,
+        events=events,
+        non_events=non_events,
+        warnings=warning_text,
+        metadata={
+            "formula": design.formula,
+            "iterations": iterations,
+        },
+    )
+    return BernoulliNode(
+        response=design.response,
+        family=Family.BERNOULLI,
+        design=design,
+        coefficients=coefficients,
+        parameter_count=len(design.columns),
+        converged=True,
+        _fit_diagnostics=diagnostics,
+    )
 
 
 def fit_node(data: pd.DataFrame, node: CompiledNodePlan) -> FittedNode:
@@ -604,7 +904,14 @@ def fit_node(data: pd.DataFrame, node: CompiledNodePlan) -> FittedNode:
     response, design = _fit_frozen_design(data, node)
     if node.family is Family.GAUSSIAN:
         return _fit_gaussian(response, design)
-    raise NotImplementedError("Bernoulli fitting is implemented in the next step")
+    if node.family is Family.BERNOULLI:
+        return _fit_bernoulli(response, design)
+    raise _node_error(
+        node,
+        code="unsupported_family",
+        message=f"unsupported node family {node.family!r}",
+        details={"family": str(node.family)},
+    )
 
 
 __all__ = [
