@@ -60,6 +60,20 @@ Each task entry should record:
 - **Verification:** `./.venv/Scripts/python.exe -m pytest tests/mediation/test_types.py -q` → `9 passed in 0.03s`; `./.venv/Scripts/python.exe -m pytest -q` → `13 passed in 0.43s`; `git diff --check` passed.
 - **Follow-up:** Task 3 consumes `Issue` and `AnalysisStatus`. It must preserve the lowercase status values and use the existing immutable result vocabulary rather than creating a second error/status hierarchy.
 
+### Task 03 — Parse and validate explicit model specifications
+
+- **Date:** 2026-09-19
+- **Task:** Task 3 — Parse and validate explicit model specifications.
+- **Status:** Completed.
+- **Schedule:** On schedule for the requested task sequence; no external deadline was supplied.
+- **Decision:** Implement the YAML boundary as a strict structured-schema compiler. Return frozen dataclasses with enum-valued roles, families, and term kinds; reject unknown nested keys, executable/formula-like term text, unsupported response declarations, invalid graph structures, and incomplete computation/contrast settings with stable `SpecValidationError(code, path, message)` values.
+- **Rationale:** Task 4 must consume a validated `ModelSpec` without guessing at scientific intent or silently modifying a user's design. Keeping terms as `{variable, basis, df, purpose}` objects prevents expression evaluation and makes the canonical specification independent of filesystem paths. The existing Task 2 `AnalysisStatus` and `Issue` vocabulary is reused through `SpecValidationError.status` and `SpecValidationError.to_issue()` rather than introducing a second diagnostic status hierarchy.
+- **Actions:** Added the red contract suite first and committed it as `eb36fdc`. Implemented `src/mintmed/spec.py` with the frozen specification/template objects, safe YAML loading, role-specific nested-key checks, enum conversion, exact one-exposure/one-outcome and one-to-four-mediator validation, independent mediator factorization order, Kahn acyclic-graph validation, predictor-role/order checks, intercept and node-family checks, natural-spline `df=3` enforcement, interaction main-effect checks, Bernoulli level validation, contrast/moderator validation, deterministic computation settings, and path-free canonical JSON serialization. The roadmap example omits node intercept fields even though the implementation rules require them; the implementation therefore requires an explicit `intercept: true` declaration on every node so the rule is machine-checkable. A stale existing `.venv` also pointed at a non-executable Python 3.11 runtime during the first focused run; the existing per-user Python 3.11 installer repaired that local environment, with no additional tracked environment files changed.
+- **Evidence:** The focused test run initially failed during collection with `ModuleNotFoundError: No module named 'mintmed.spec'`, confirming the test contract was red before implementation. After implementation, the focused suite passed `22 tests`. The implementation commit is `e1ca823` (`feat: validate explicit mediation specifications`).
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; this decision log. The plan-scoped execution ledger is maintained in the ignored `.superpowers/sdd/task-03-specification/` workspace.
+- **Verification:** `./.venv/Scripts/python.exe -m pytest tests/mediation/test_spec.py -q` → `22 passed`; `./.venv/Scripts/python.exe -m pytest -q` → `35 passed`; `./.venv/Scripts/python.exe -m compileall -q src tests` passed; `./.venv/Scripts/python.exe -m pip check` → `No broken requirements found`; `git diff --check` passed. The final committed tree was clean after the implementation commit before this documentation update.
+- **Follow-up:** Task 3 is completed on schedule. Task 4 may add data-dependent preflight and compilation, but it must accept only validated `ModelSpec` objects, preserve explicit-vs-template provenance, and never silently add, drop, reorder, or downgrade declared model terms/families.
+
 ## Reusable entry template
 
 ### Task NN — Name
