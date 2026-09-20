@@ -33,8 +33,27 @@ class UnsupportedAnalysisError(PlanValidationError):
     """The declared analysis is outside the supported data or counterfactual scope."""
 
 
+class NodeFitError(PlanValidationError):
+    """A compiled node cannot produce a valid frozen design or fit."""
+
+    def __init__(
+        self,
+        *,
+        code: str,
+        response: str,
+        message: str,
+        variable: str | None = None,
+        columns: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(code, f"nodes.{response}", message)
+        self.response = response
+        self.variable = variable
+        self.columns = tuple(columns)
+
+
 __all__ = [
     "DataValidationError",
+    "NodeFitError",
     "PlanValidationError",
     "UnsupportedAnalysisError",
 ]
