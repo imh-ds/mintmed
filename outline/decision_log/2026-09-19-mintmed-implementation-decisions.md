@@ -46,6 +46,20 @@ Each task entry should record:
 - **Verification:** The inherited aggregation test passed: `4 passed in 0.49s`. Final full suite passed: `4 passed in 0.39s`. Required imports (`mintmed`, Patsy, Statsmodels, NumPy, SciPy, pandas, PyYAML, matplotlib) succeeded. `git diff --check` reported no whitespace errors.
 - **Follow-up:** Task 1 is complete on schedule for the requested task sequence. Task 2 may extend `src/mintmed/__init__.py` with public exports while preserving Python `>=3.11,<3.12`.
 
+### Task 02 — Define immutable shared types and result statuses
+
+- **Date:** 2026-09-19
+- **Task:** Task 2 — Define immutable shared types and result statuses.
+- **Status:** Completed.
+- **Schedule:** On schedule for the requested task sequence; no external deadline was supplied.
+- **Decision:** Represent shared analysis values with frozen, slotted dataclasses. Normalize ordered collections to tuples and metadata/diagnostic maps to read-only dict-compatible mappings so the objects remain immutable while supporting the planned `dataclasses.asdict`/JSON reporting path.
+- **Rationale:** Later specification, fitting, bootstrap, API, and report tasks need one stable result vocabulary. A dict-compatible read-only wrapper preserves mapping semantics and serialization compatibility without exposing mutable result state.
+- **Actions:** Added eight focused contract tests and committed the red test contract as `afd8317`. Implemented `AnalysisStatus`, `Issue`, `EffectEstimate`, `RegimeMeans`, `ContributionResult`, `PointAnalysis`, `BootstrapResult`, and `MediationResult` in `src/mintmed/types.py`. The first `MappingProxyType` implementation failed the new `dataclasses.asdict` regression test, so it was replaced with a private `_FrozenDict`; the corrected implementation and tests were committed as `6a525c2`.
+- **Evidence:** The initial focused run failed during collection with `ModuleNotFoundError: No module named 'mintmed.types'`. After implementation, the focused suite passed `9 tests`, and the full suite passed `13 tests`.
+- **Files:** `src/mintmed/types.py`; `tests/mediation/test_types.py`; this decision log.
+- **Verification:** `./.venv/Scripts/python.exe -m pytest tests/mediation/test_types.py -q` → `9 passed in 0.03s`; `./.venv/Scripts/python.exe -m pytest -q` → `13 passed in 0.43s`; `git diff --check` passed.
+- **Follow-up:** Task 3 consumes `Issue` and `AnalysisStatus`. It must preserve the lowercase status values and use the existing immutable result vocabulary rather than creating a second error/status hierarchy.
+
 ## Reusable entry template
 
 ### Task NN — Name
