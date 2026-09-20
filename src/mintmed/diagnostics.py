@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 from .types import AnalysisStatus, Issue
 
 
@@ -44,11 +47,23 @@ class NodeFitError(PlanValidationError):
         message: str,
         variable: str | None = None,
         columns: tuple[str, ...] = (),
+        details: Mapping[str, object] | None = None,
     ) -> None:
         super().__init__(code, f"nodes.{response}", message)
         self.response = response
         self.variable = variable
         self.columns = tuple(columns)
+        self.details = MappingProxyType(dict(details or {}))
+
+    def to_issue(self, *, node: str | None = None) -> Issue:
+        """Convert the fit failure into the shared fit-failed status."""
+
+        return Issue(
+            code=self.code,
+            message=str(self),
+            status=AnalysisStatus.FIT_FAILED,
+            node=node or self.response,
+        )
 
 
 __all__ = [
