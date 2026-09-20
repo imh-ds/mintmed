@@ -346,6 +346,7 @@ def test_continuous_exposure_requires_explicit_values_without_levels(tmp_path: P
         for term in model["terms"]:  # type: ignore[index]
             if term["variable"] == "condition":
                 term["variable"] = "dose"
+                term["basis"] = "linear"
 
     spec = load_model_spec(_write_spec(tmp_path, value))
 

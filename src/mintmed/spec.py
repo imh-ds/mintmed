@@ -12,12 +12,21 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from enum import Enum
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, TypeVar
 
+import numpy as np
+import pandas as pd
 import yaml
 
+from . import __version__
+from .diagnostics import (
+    DataValidationError,
+    PlanValidationError,
+    UnsupportedAnalysisError,
+)
 from .types import AnalysisStatus, Issue
 
 
@@ -214,6 +223,7 @@ class ModelSpec:
     missing: str
     interpretation: str
     computation: ComputationSpec
+    participant_id: VariableSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mediators", tuple(self.mediators))
@@ -261,6 +271,7 @@ class TemplateSpec:
     missing: str = "error"
     interpretation: str = "model_standardized"
     schema_version: int = 1
+    participant_id: VariableSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "mediators", tuple(self.mediators))
@@ -273,6 +284,71 @@ class TemplateSpec:
             tuple(tuple(edge) for edge in self.scientific_edges),
         )
         object.__setattr__(self, "mediator_order", tuple(self.mediator_order))
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledNodePlan:
+    """Immutable node contract produced after data-dependent preflight."""
+
+    response: str
+    family: Family
+    terms: tuple[TermSpec, ...]
+    interactions: tuple[InteractionSpec, ...]
+    scientific_parents: tuple[str, ...]
+    factorization_predictors: tuple[str, ...]
+    intercept: bool
+    category_levels: Mapping[str, tuple[Any, ...]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "family", _coerce_enum(self.family, Family, "family"))
+        object.__setattr__(self, "terms", tuple(self.terms))
+        object.__setattr__(self, "interactions", tuple(self.interactions))
+        object.__setattr__(self, "scientific_parents", tuple(self.scientific_parents))
+        object.__setattr__(self, "factorization_predictors", tuple(self.factorization_predictors))
+        object.__setattr__(
+            self,
+            "category_levels",
+            _freeze_mapping({name: tuple(levels) for name, levels in self.category_levels.items()}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisPlan:
+    """Immutable compiled analysis population and node contracts."""
+
+    nodes: tuple[CompiledNodePlan, ...]
+    retained_row_indices: tuple[Any, ...]
+    excluded_row_indices: tuple[Any, ...]
+    analysis_columns: tuple[str, ...]
+    original_row_count: int
+    retained_row_count: int
+    participant_id: str | None
+    contrast: ContrastSpec
+    computation: ComputationSpec
+    missing: str
+    issues: tuple[Issue, ...]
+    specification_hash: str
+    analysis_hash: str
+    diagnostics: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "nodes", tuple(self.nodes))
+        object.__setattr__(self, "retained_row_indices", tuple(self.retained_row_indices))
+        object.__setattr__(self, "excluded_row_indices", tuple(self.excluded_row_indices))
+        object.__setattr__(self, "analysis_columns", tuple(self.analysis_columns))
+        object.__setattr__(self, "issues", tuple(self.issues))
+        object.__setattr__(self, "diagnostics", _freeze_recursive(self.diagnostics))
+
+    @property
+    def warnings(self) -> tuple[Issue, ...]:
+        """Return nonfatal warnings without exposing mutable plan state."""
+
+        return tuple(issue for issue in self.issues if issue.status is AnalysisStatus.WARNING)
+
+    def summary(self) -> str:
+        """Render a deterministic human-readable plan summary."""
+
+        return _render_plan_summary(self)
 
 
 _T = TypeVar("_T", bound=Enum)
@@ -333,6 +409,7 @@ def compile_template(template: TemplateSpec) -> ModelSpec:
             missing=template.missing,
             interpretation=template.interpretation,
             computation=template.computation,
+            participant_id=template.participant_id,
         )
         _validate_model(spec)
         return spec
@@ -340,6 +417,115 @@ def compile_template(template: TemplateSpec) -> ModelSpec:
         raise
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise SpecValidationError("malformed_template", "$", str(exc)) from exc
+
+
+def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
+    """Compile a validated model specification against an observed data frame."""
+
+    if not isinstance(spec, ModelSpec):
+        raise PlanValidationError(
+            "invalid_plan_spec", "spec", "estimate_plan expects a validated ModelSpec"
+        )
+    try:
+        _validate_model(spec)
+    except SpecValidationError as exc:
+        raise PlanValidationError("invalid_plan_spec", exc.path, exc.message) from exc
+
+    selected, retained, excluded, analysis_columns, missing_counts = _select_analysis_rows(
+        data, spec
+    )
+    variables = _spec_variables(spec)
+    _validate_observed_values(retained, variables)
+    _validate_participant_independence(retained, spec.participant_id)
+    support = _support_summaries(retained, variables)
+    _validate_counterfactual_support(retained, spec, variables)
+    nodes = _compile_nodes(spec, variables)
+    issues, binary_counts = _build_issues(retained, spec, variables)
+
+    specification_hash = hashlib.sha256(spec.canonical_json().encode("utf-8")).hexdigest()
+    data_fingerprint = _data_fingerprint(selected, analysis_columns)
+    analysis_specification = spec.to_canonical_dict()
+    analysis_specification["computation"].pop("max_seconds", None)
+    analysis_specification["computation"].pop("memory_budget_mb", None)
+    analysis_specification_hash = hashlib.sha256(
+        json.dumps(
+            analysis_specification,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    analysis_payload = {
+        "scientific_specification_hash": analysis_specification_hash,
+        "data_fingerprint": data_fingerprint,
+        "analysis_columns": list(analysis_columns),
+        "missing": spec.missing,
+        "retained_row_indices": [_json_safe(value) for value in retained.index.tolist()],
+        "excluded_row_indices": [_json_safe(value) for value in excluded],
+        "contrast": asdict(spec.contrast),
+        "seed": spec.computation.seed,
+        "bootstrap": spec.computation.bootstrap,
+        "integration_draws": spec.computation.integration_draws,
+        "integration_tolerance": spec.computation.integration_tolerance,
+        "software_versions": {"mintmed": __version__, "pandas": pd.__version__},
+    }
+    analysis_hash = hashlib.sha256(
+        json.dumps(
+            _canonicalize(analysis_payload),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    diagnostics = {
+        "rows": {
+            "original": len(selected),
+            "retained": len(retained),
+            "excluded": len(excluded),
+        },
+        "missing": {
+            "policy": spec.missing,
+            "excluded_rows": len(excluded),
+            "counts": missing_counts,
+        },
+        "participant_id": {
+            "column": spec.participant_id.name if spec.participant_id else None,
+            "unique": True,
+        },
+        "support": support,
+        "binary_counts": binary_counts,
+        "scientific_edges": [list(edge) for edge in spec.scientific.edges],
+        "factorization_order": list(spec.scientific.mediator_order),
+        "nodes": [
+            {
+                "response": node.response,
+                "family": node.family.value,
+                "terms": [term.variable for term in node.terms],
+                "interactions": [
+                    [interaction.left, interaction.right]
+                    for interaction in node.interactions
+                ],
+            }
+            for node in nodes
+        ],
+        "warnings": [issue.code for issue in issues],
+    }
+    return AnalysisPlan(
+        nodes=nodes,
+        retained_row_indices=tuple(retained.index.tolist()),
+        excluded_row_indices=excluded,
+        analysis_columns=analysis_columns,
+        original_row_count=len(selected),
+        retained_row_count=len(retained),
+        participant_id=spec.participant_id.name if spec.participant_id else None,
+        contrast=spec.contrast,
+        computation=spec.computation,
+        missing=spec.missing,
+        issues=issues,
+        specification_hash=specification_hash,
+        analysis_hash=analysis_hash,
+        diagnostics=diagnostics,
+    )
 
 
 def _parse_template_mapping(raw: Any) -> TemplateSpec:
@@ -367,6 +553,7 @@ def _parse_template_mapping(raw: Any) -> TemplateSpec:
             "interpretation",
             "missing",
             "computation",
+            "participant_id",
         },
         "$",
         required={
@@ -407,7 +594,27 @@ def _parse_template_mapping(raw: Any) -> TemplateSpec:
             _sequence(root.get("moderators", ()), "moderators")
         )
     )
-    _validate_unique_variables((exposure, outcome, *mediators, *baseline, *moderators))
+    participant_id = None
+    if root.get("participant_id") is not None:
+        participant_id = _parse_variable(
+            root["participant_id"], Role.PARTICIPANT_ID, "participant_id"
+        )
+        if participant_id.observed_type != "categorical":
+            _fail(
+                "invalid_participant_id",
+                "participant_id.type",
+                "participant_id must be categorical",
+            )
+    _validate_unique_variables(
+        (
+            exposure,
+            outcome,
+            *mediators,
+            *baseline,
+            *moderators,
+            *((participant_id,) if participant_id is not None else ()),
+        )
+    )
 
     mediator_order = tuple(
         _string(item, f"mediator_order[{index}]")
@@ -421,7 +628,13 @@ def _parse_template_mapping(raw: Any) -> TemplateSpec:
 
     edges = _parse_edges(root["scientific_edges"])
     nodes = _parse_nodes(
-        root["models"], exposure, outcome, mediators, baseline, moderators
+        root["models"],
+        exposure,
+        outcome,
+        mediators,
+        baseline,
+        moderators,
+        participant_id,
     )
     contrast = _parse_contrast(
         root.get("contrast"),
@@ -456,6 +669,7 @@ def _parse_template_mapping(raw: Any) -> TemplateSpec:
         interpretation=interpretation,
         computation=computation,
         schema_version=schema_version,
+        participant_id=participant_id,
     )
 
 
@@ -465,7 +679,7 @@ def _parse_exposure(value: Any, path: str) -> tuple[VariableSpec, Any, Any]:
         mapping,
         {"name", "type", "levels", "reference", "comparison", "label"},
         path,
-        required={"name", "type", "levels", "reference", "comparison"},
+        required={"name", "type", "reference", "comparison"},
     )
     variable = _parse_variable(
         {key: mapping[key] for key in ("name", "type", "levels", "label") if key in mapping},
@@ -474,8 +688,14 @@ def _parse_exposure(value: Any, path: str) -> tuple[VariableSpec, Any, Any]:
     )
     if variable.observed_type not in {"binary", "categorical", "continuous"}:
         _fail("unsupported_exposure_type", f"{path}.type", "exposure type is not supported")
-    if not variable.levels:
+    if variable.observed_type in {"binary", "categorical"} and not variable.levels:
         _fail("missing_levels", f"{path}.levels", "exposure levels must be explicit")
+    if variable.observed_type == "continuous" and variable.levels:
+        _fail(
+            "invalid_exposure_levels",
+            f"{path}.levels",
+            "continuous exposures cannot declare categorical levels",
+        )
     if variable.observed_type == "binary" and tuple(variable.levels) != (0, 1):
         _fail("invalid_binary_levels", f"{path}.levels", "binary levels must be exactly [0, 1]")
     return variable, mapping["reference"], mapping["comparison"]
@@ -541,7 +761,11 @@ def _parse_variable(value: Any, role: Role, path: str) -> VariableSpec:
     if observed_type not in _SUPPORTED_TYPES:
         _fail("unsupported_observed_type", f"{path}.type", f"unsupported observed type {observed_type!r}")
     levels = _levels(mapping.get("levels", ()), f"{path}.levels")
-    if observed_type in {"binary", "categorical"} and not levels:
+    if (
+        observed_type in {"binary", "categorical"}
+        and not levels
+        and role is not Role.PARTICIPANT_ID
+    ):
         _fail("missing_levels", f"{path}.levels", "categorical levels must be explicit")
     label = mapping.get("label")
     if label is not None:
@@ -573,6 +797,7 @@ def _parse_nodes(
     mediators: tuple[VariableSpec, ...],
     baseline: tuple[VariableSpec, ...],
     moderators: tuple[VariableSpec, ...],
+    participant_id: VariableSpec | None,
 ) -> tuple[NodeSpec, ...]:
     mapping = _mapping(value, "models", "models")
     expected = {item.name for item in (*mediators, outcome)}
@@ -587,7 +812,14 @@ def _parse_nodes(
 
     variables = {
         item.name: item
-        for item in (*mediators, outcome, exposure, *baseline, *moderators)
+        for item in (
+            *mediators,
+            outcome,
+            exposure,
+            *baseline,
+            *moderators,
+            *((participant_id,) if participant_id is not None else ()),
+        )
     }
     mediator_index = {item.name: index for index, item in enumerate(mediators)}
     nodes = []
@@ -742,11 +974,27 @@ def _validate_model(spec: ModelSpec) -> None:
         _fail("invalid_role", "outcome.role", "outcome must have role outcome")
     if not 1 <= len(spec.mediators) <= 4:
         _fail("mediator_count", "mediators", "declare between one and four mediators")
-    _validate_unique_variables((spec.exposure, spec.outcome, *spec.mediators, *spec.baseline, *spec.moderators))
+    _validate_unique_variables(
+        (
+            spec.exposure,
+            spec.outcome,
+            *spec.mediators,
+            *spec.baseline,
+            *spec.moderators,
+            *((spec.participant_id,) if spec.participant_id is not None else ()),
+        )
+    )
     _validate_mediator_order(spec.scientific.mediator_order, spec.mediators)
     if spec.scientific.arrangement not in _ARRANGEMENTS:
         _fail("invalid_arrangement", "arrangement", f"unsupported arrangement {spec.scientific.arrangement!r}")
-    all_variables = (spec.exposure, spec.outcome, *spec.mediators, *spec.baseline, *spec.moderators)
+    all_variables = (
+        spec.exposure,
+        spec.outcome,
+        *spec.mediators,
+        *spec.baseline,
+        *spec.moderators,
+        *((spec.participant_id,) if spec.participant_id is not None else ()),
+    )
     _validate_graph(spec.scientific.edges, all_variables)
     if len(spec.nodes) != len(spec.mediators) + 1:
         _fail("invalid_model_nodes", "models", "models must contain exactly all mediators and the outcome")
@@ -921,6 +1169,365 @@ def _validate_computation(computation: ComputationSpec) -> None:
         _fail("invalid_computation", "computation.integration_tolerance", "tolerance must be positive")
 
 
+def _spec_variables(spec: ModelSpec) -> dict[str, VariableSpec]:
+    """Return declared variables in the analysis-column order."""
+
+    by_name = {
+        variable.name: variable
+        for variable in (
+            spec.exposure,
+            *spec.mediators,
+            spec.outcome,
+            *spec.baseline,
+            *spec.moderators,
+            *((spec.participant_id,) if spec.participant_id is not None else ()),
+        )
+    }
+    ordered_names = [spec.exposure.name]
+    ordered_names.extend(spec.scientific.mediator_order)
+    ordered_names.append(spec.outcome.name)
+    ordered_names.extend(variable.name for variable in spec.baseline)
+    ordered_names.extend(variable.name for variable in spec.moderators)
+    if spec.participant_id is not None:
+        ordered_names.append(spec.participant_id.name)
+    return {name: by_name[name] for name in ordered_names}
+
+
+def _select_analysis_rows(
+    data: pd.DataFrame,
+    spec: ModelSpec,
+) -> tuple[pd.DataFrame, pd.DataFrame, tuple[Any, ...], tuple[str, ...], Mapping[str, int]]:
+    if not isinstance(data, pd.DataFrame):
+        raise DataValidationError("invalid_data", "data", "data must be a pandas DataFrame")
+    if data.columns.has_duplicates:
+        raise DataValidationError(
+            "duplicate_columns", "data.columns", "data columns must be unique"
+        )
+    variables = _spec_variables(spec)
+    analysis_columns = tuple(variables)
+    missing_columns = [column for column in analysis_columns if column not in data.columns]
+    if missing_columns:
+        raise DataValidationError(
+            "missing_columns",
+            "data.columns",
+            f"required analysis columns are missing: {missing_columns}",
+        )
+    selected = data.loc[:, list(analysis_columns)].copy(deep=True)
+    for variable in variables.values():
+        if variable.observed_type not in {"continuous", "binary"}:
+            continue
+        series = selected[variable.name]
+        if not pd.api.types.is_numeric_dtype(series):
+            raise DataValidationError(
+                "invalid_data_type",
+                f"data.{variable.name}",
+                f"{variable.observed_type} variable must use a numeric dtype",
+            )
+        values = series.astype(float).to_numpy()
+        missing = series.isna().to_numpy()
+        if ((~missing) & ~np.isfinite(values)).any():
+            raise DataValidationError(
+                "nonfinite_values",
+                f"data.{variable.name}",
+                "numeric analysis values must be finite",
+            )
+    missing_mask = selected.isna().any(axis=1)
+    missing_counts = {
+        name: int(count)
+        for name, count in selected.loc[missing_mask].isna().sum().items()
+        if count
+    }
+    if missing_mask.any() and spec.missing == "error":
+        raise DataValidationError(
+            "missing_values",
+            "data",
+            f"missing values by column: {missing_counts}",
+        )
+    retained = selected.loc[~missing_mask].copy(deep=True)
+    excluded = tuple(selected.index[missing_mask].tolist())
+    if retained.empty:
+        raise DataValidationError(
+            "missing_values",
+            "data",
+            "no complete analysis rows remain after missingness handling",
+        )
+    return selected, retained, excluded, analysis_columns, missing_counts
+
+
+def _validate_observed_values(
+    data: pd.DataFrame,
+    variables: Mapping[str, VariableSpec],
+) -> None:
+    for variable in variables.values():
+        series = data[variable.name]
+        if variable.observed_type == "binary":
+            invalid = ~series.isin((0, 1))
+            if invalid.any():
+                raise DataValidationError(
+                    "invalid_binary_values",
+                    f"data.{variable.name}",
+                    "binary values must be coded as 0 or 1",
+                )
+        elif variable.observed_type == "categorical" and variable.role is not Role.PARTICIPANT_ID:
+            invalid = ~series.isin(variable.levels)
+            if invalid.any():
+                raise DataValidationError(
+                    "invalid_category_values",
+                    f"data.{variable.name}",
+                    "observed categorical values must be declared levels",
+                )
+
+
+def _validate_participant_independence(
+    data: pd.DataFrame,
+    participant_id: VariableSpec | None,
+) -> None:
+    if participant_id is None:
+        return
+    duplicated = data[participant_id.name].duplicated(keep=False)
+    if duplicated.any():
+        raise UnsupportedAnalysisError(
+            "repeated_rows",
+            "participant_id",
+            f"{int(duplicated.sum())} retained rows share a participant identifier",
+        )
+
+
+def _support_summaries(
+    data: pd.DataFrame,
+    variables: Mapping[str, VariableSpec],
+) -> dict[str, Mapping[str, Any]]:
+    summaries: dict[str, Mapping[str, Any]] = {}
+    for variable in variables.values():
+        series = data[variable.name]
+        if variable.role is Role.PARTICIPANT_ID:
+            summaries[variable.name] = {
+                "observed_count": int(series.nunique(dropna=True)),
+                "unique": True,
+            }
+        elif variable.observed_type == "continuous":
+            summaries[variable.name] = {
+                "observed_min": float(series.min()),
+                "observed_max": float(series.max()),
+            }
+        else:
+            observed = [_json_safe(value) for value in pd.unique(series)]
+            summaries[variable.name] = {
+                "observed_levels": observed,
+                "declared_levels": [_json_safe(value) for value in variable.levels],
+            }
+    return summaries
+
+
+def _validate_counterfactual_support(
+    data: pd.DataFrame,
+    spec: ModelSpec,
+    variables: Mapping[str, VariableSpec],
+) -> None:
+    _validate_supported_value(
+        data[spec.exposure.name],
+        variables[spec.exposure.name],
+        spec.contrast.reference,
+        "contrast.reference",
+    )
+    _validate_supported_value(
+        data[spec.exposure.name],
+        variables[spec.exposure.name],
+        spec.contrast.comparison,
+        "contrast.comparison",
+    )
+    for name, value in spec.contrast.moderator_values.items():
+        _validate_supported_value(
+            data[name], variables[name], value, f"contrast.moderator_values.{name}"
+        )
+
+
+def _validate_supported_value(
+    series: pd.Series,
+    variable: VariableSpec,
+    value: Any,
+    path: str,
+) -> None:
+    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+        raise UnsupportedAnalysisError(
+            "unsupported_extrapolation", path, "counterfactual value must be finite"
+        )
+    if variable.observed_type == "continuous":
+        observed_min = float(series.min())
+        observed_max = float(series.max())
+        try:
+            supported = observed_min <= float(value) <= observed_max
+        except (TypeError, ValueError):
+            supported = False
+    else:
+        supported = bool(series.eq(value).any())
+    if not supported:
+        raise UnsupportedAnalysisError(
+            "unsupported_extrapolation",
+            path,
+            f"{variable.name} counterfactual is outside retained observed support",
+        )
+
+
+def _compile_nodes(
+    spec: ModelSpec,
+    variables: Mapping[str, VariableSpec],
+) -> tuple[CompiledNodePlan, ...]:
+    node_by_response = {node.response: node for node in spec.nodes}
+    seen_edges: set[tuple[str, str]] = set()
+    for edge in spec.scientific.edges:
+        if edge in seen_edges:
+            raise PlanValidationError(
+                "invalid_plan_spec",
+                "scientific_edges",
+                f"duplicate scientific edge {edge!r}",
+            )
+        seen_edges.add(edge)
+    ordered_responses = (*spec.scientific.mediator_order, spec.outcome.name)
+    compiled: list[CompiledNodePlan] = []
+    for response in ordered_responses:
+        node = node_by_response[response]
+        parents = tuple(
+            source for source, target in spec.scientific.edges if target == response
+        )
+        predictors = tuple(dict.fromkeys(term.variable for term in node.terms))
+        category_levels: dict[str, tuple[Any, ...]] = {}
+        response_variable = variables[response]
+        if response_variable.levels:
+            category_levels[response] = tuple(response_variable.levels)
+        for predictor in predictors:
+            predictor_variable = variables[predictor]
+            if predictor_variable.levels:
+                category_levels[predictor] = tuple(predictor_variable.levels)
+        compiled.append(
+            CompiledNodePlan(
+                response=response,
+                family=node.family,
+                terms=node.terms,
+                interactions=node.interactions,
+                scientific_parents=parents,
+                factorization_predictors=predictors,
+                intercept=node.intercept,
+                category_levels=category_levels,
+            )
+        )
+    return tuple(compiled)
+
+
+def _build_issues(
+    data: pd.DataFrame,
+    spec: ModelSpec,
+    variables: Mapping[str, VariableSpec],
+) -> tuple[tuple[Issue, ...], dict[str, Mapping[str, int]]]:
+    issues: list[Issue] = []
+    binary_counts: dict[str, Mapping[str, int]] = {}
+    for response in (*spec.scientific.mediator_order, spec.outcome.name):
+        variable = variables[response]
+        if variable.observed_type != "binary":
+            continue
+        series = data[response]
+        events = int((series == 1).sum())
+        non_events = int((series == 0).sum())
+        binary_counts[response] = {"events": events, "non_events": non_events}
+        if events < 5 or non_events < 5:
+            issues.append(
+                Issue(
+                    code="sparse_binary_events",
+                    message=(
+                        f"{response} has {events} events and {non_events} non-events; "
+                        "both counts should be at least 5 for this warning gate"
+                    ),
+                    status=AnalysisStatus.WARNING,
+                    node=response,
+                )
+            )
+    if len(data) < 100:
+        issues.append(
+            Issue(
+                code="small_sample",
+                message=f"analysis population has {len(data)} retained rows, below 100",
+                status=AnalysisStatus.WARNING,
+            )
+        )
+    return tuple(issues), binary_counts
+
+
+def _data_fingerprint(frame: pd.DataFrame, columns: tuple[str, ...]) -> str:
+    selected = frame.loc[:, list(columns)]
+    metadata = {
+        "columns": list(columns),
+        "dtypes": [str(selected[column].dtype) for column in columns],
+        "row_count": len(selected),
+    }
+    digest = hashlib.sha256()
+    digest.update(
+        json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
+    digest.update(
+        pd.util.hash_pandas_object(selected, index=True)
+        .to_numpy(dtype="uint64")
+        .tobytes()
+    )
+    return digest.hexdigest()
+
+
+def _render_plan_summary(plan: AnalysisPlan) -> str:
+    edges = ", ".join(f"{source}->{target}" for source, target in plan.diagnostics["scientific_edges"])
+    lines = [
+        (
+            "Analysis population: "
+            f"retained={plan.retained_row_count}, "
+            f"excluded={len(plan.excluded_row_indices)}, "
+            f"original={plan.original_row_count}"
+        ),
+        f"Node order: {' -> '.join(node.response for node in plan.nodes)}",
+        f"Scientific edges: {edges or 'none'}",
+        "Factorization predictors:",
+    ]
+    lines.extend(
+        f"  {node.response}: {', '.join(node.factorization_predictors) or 'none'}"
+        for node in plan.nodes
+    )
+    lines.extend(
+        [
+            f"Exposure contrast: {plan.contrast.reference} -> {plan.contrast.comparison}",
+            f"Interpretation: {plan.contrast.interpretation}",
+            "Warnings: "
+            + (
+                ", ".join(
+                    issue.code
+                    + (f"({issue.node})" if issue.node is not None else "")
+                    for issue in plan.warnings
+                )
+                or "none"
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if isinstance(value, (tuple, list)):
+        return [_json_safe(item) for item in value]
+    if value is pd.NA or value is pd.NaT:
+        return None
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _freeze_recursive(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _FrozenDict({key: _freeze_recursive(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze_recursive(item) for item in value)
+    return value
+
+
 def _coerce_enum(value: Any, enum_type: type[_T], field_name: str) -> _T:
     if isinstance(value, enum_type):
         return value
@@ -1009,19 +1616,25 @@ def _fail(code: str, path: str, message: str) -> None:
 
 
 __all__ = [
+    "AnalysisPlan",
     "ComputationSpec",
+    "CompiledNodePlan",
     "ContrastSpec",
+    "DataValidationError",
     "Family",
     "InteractionSpec",
     "ModelSpec",
     "NodeSpec",
+    "PlanValidationError",
     "Role",
     "ScientificModel",
     "SpecValidationError",
     "TemplateSpec",
     "TermKind",
     "TermSpec",
+    "UnsupportedAnalysisError",
     "VariableSpec",
     "compile_template",
+    "estimate_plan",
     "load_model_spec",
 ]
