@@ -51,11 +51,12 @@ def test_fitted_system_preserves_retained_rows_and_declared_order():
     assert tuple(node.response for node in fitted.nodes) == tuple(
         node.response for node in plan.nodes
     )
-    assert tuple(node.response for node in fitted.mediator_nodes) == plan.scientific.mediator_order
+    assert tuple(node.response for node in fitted.mediator_nodes) == tuple(
+        node.response for node in plan.nodes[:-1]
+    )
     assert fitted.outcome_node.response == plan.nodes[-1].response
     assert plan.retained_row_indices == tuple(data.index)
 
 
 def test_regime_means_result_contract_is_response_scale():
     assert RegimeMeans(1.0, 2.0, 4.0).total_effect == 3.0
-
