@@ -138,6 +138,10 @@ def test_common_draws_are_reused_for_deterministic_means_and_diagnostics():
         fixture.data, plan, fitted
     )
     assert fitted.integration_diagnostics["accepted_draw_count"] == fitted.draw_budget
+    with pytest.raises(TypeError):
+        fitted.integration_diagnostics["accepted_draw_count"] = 1
+    with pytest.raises(TypeError):
+        fitted.integration_diagnostics["candidate_checks"][0]["accepted"] = False
 
 
 def test_exact_binary_path_returns_probability_means_and_ignores_draw_sequence():

@@ -39,7 +39,7 @@ class GFormulaError(ValueError):
         self.message = str(message)
         self.node = node
         self.regime = regime
-        self.details = _freeze_mapping(details)
+        self.details = _freeze_nested(details or {})
         super().__init__(self.message)
 
 
@@ -47,6 +47,16 @@ def _read_only_array(value: np.ndarray) -> np.ndarray:
     array = np.array(value, dtype=np.float64, copy=True)
     array.setflags(write=False)
     return array
+
+
+def _freeze_nested(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _freeze_mapping({key: _freeze_nested(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_nested(item) for item in value)
+    if isinstance(value, np.ndarray):
+        return _read_only_array(value)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +84,8 @@ class CommonDraws:
             raise ValueError("draw arrays must have shape (draw_count, mediator_count)")
         if not np.isfinite(uniforms).all() or not np.isfinite(normals).all():
             raise ValueError("draw arrays must be finite")
+        if np.any(uniforms < float(self.epsilon)) or np.any(uniforms > 1.0 - float(self.epsilon)):
+            raise ValueError("uniform draws must respect epsilon clipping")
         object.__setattr__(self, "seed", int(self.seed))
         object.__setattr__(self, "draw_count", int(self.draw_count))
         object.__setattr__(self, "mediator_count", int(self.mediator_count))
@@ -147,7 +159,7 @@ class FittedSystem:
         object.__setattr__(self, "issues", issues)
         object.__setattr__(self, "status", AnalysisStatus(self.status))
         object.__setattr__(self, "draw_budget", int(self.draw_budget))
-        object.__setattr__(self, "integration_diagnostics", _freeze_mapping(self.integration_diagnostics))
+        object.__setattr__(self, "integration_diagnostics", _freeze_nested(self.integration_diagnostics))
         if self.mediator_residual_correlation is not None:
             correlation = _read_only_array(self.mediator_residual_correlation)
             mediator_count = len(_mediator_order(self.plan))
