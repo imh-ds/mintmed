@@ -214,8 +214,11 @@ def _expected_node_responses(plan: AnalysisPlan) -> tuple[str, ...]:
 
 
 def _mediator_order(plan: AnalysisPlan) -> tuple[str, ...]:
-    """Return the scientific mediator order compiled into AnalysisPlan.nodes."""
+    """Return the scientific mediator order compiled into an AnalysisPlan."""
 
+    declared = plan.diagnostics.get("factorization_order")
+    if declared is not None:
+        return tuple(str(name) for name in declared)
     return tuple(node.response for node in plan.nodes[:-1])
 
 
