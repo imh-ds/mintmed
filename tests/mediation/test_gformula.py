@@ -5,12 +5,10 @@ from __future__ import annotations
 from dataclasses import replace
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from mintmed.models import fit_node
 from mintmed.simulation import sample_fixture
-from mintmed.spec import Family, estimate_plan
+from mintmed.spec import Family, TermKind, TermSpec, estimate_plan
 from mintmed.types import AnalysisStatus, RegimeMeans
 
 
@@ -209,3 +207,24 @@ def test_invalid_draw_dimensions_and_failed_integration_are_typed():
     with pytest.raises(GFormulaError) as unresolved:
         compute_regime_means(failed_fixture.data, failed_plan, failed)
     assert unresolved.value.status is AnalysisStatus.INTEGRATION_FAILED
+
+
+def test_node_order_and_node_fit_failures_keep_typed_context():
+    from mintmed.gformula import GFormulaError, fit_system
+
+    fixture, plan = _fixture("serial_two", 80)
+    reordered = replace(plan, nodes=(plan.nodes[1], plan.nodes[0], plan.nodes[2]))
+    with pytest.raises(GFormulaError) as order_error:
+        fit_system(fixture.data, reordered)
+    assert order_error.value.code == "node_order_mismatch"
+    assert order_error.value.status is AnalysisStatus.FIT_FAILED
+
+    bad_first = replace(
+        plan.nodes[0],
+        terms=(TermSpec("not_in_analysis", TermKind.LINEAR),),
+    )
+    broken = replace(plan, nodes=(bad_first, *plan.nodes[1:]))
+    with pytest.raises(GFormulaError) as fit_error:
+        fit_system(fixture.data, broken)
+    assert fit_error.value.node == "M1"
+    assert fit_error.value.status is AnalysisStatus.FIT_FAILED

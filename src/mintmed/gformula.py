@@ -13,7 +13,7 @@ from scipy.stats import norm, qmc
 
 from .diagnostics import NodeFitError
 from .models import FittedNode, fit_node
-from .spec import AnalysisPlan, CompiledNodePlan, Family, TermKind
+from .spec import AnalysisPlan, Family, TermKind
 from .types import AnalysisStatus, Issue, RegimeMeans, _freeze_mapping
 
 
@@ -479,29 +479,22 @@ def _select_integration(
         message="Sobol integration did not satisfy the configured tolerance by 4096 draws",
         status=AnalysisStatus.INTEGRATION_FAILED,
     )
-    return _sobol_system(
-        plan,
-        nodes,
-        correlation,
-        last_primary,
-        diagnostics={**diagnostics, "status": AnalysisStatus.INTEGRATION_FAILED.value},
-    ).__class__(
+    return _make_system(
         plan=plan,
         nodes=nodes,
         draws=last_primary,
         draw_budget=last_primary.draw_count,
-        integration_method="sobol_blocked",
+        method="sobol_blocked",
         status=AnalysisStatus.INTEGRATION_FAILED,
         issues=(issue,),
-        mediator_residual_correlation=correlation,
-        integration_diagnostics=diagnostics,
+        correlation=correlation,
+        diagnostics=diagnostics,
     )
 
 
 def _expanded_frame(
     block: pd.DataFrame,
     draw_count: int,
-    exposure: object,
     moderator_values: Mapping[str, object],
     simulated: Mapping[str, np.ndarray],
 ) -> pd.DataFrame:
@@ -526,7 +519,7 @@ def _prepare_expanded(
     moderator_values: Mapping[str, object],
     simulated: Mapping[str, np.ndarray],
 ) -> pd.DataFrame:
-    expanded = _expanded_frame(block, draw_count, exposure, moderator_values, simulated)
+    expanded = _expanded_frame(block, draw_count, moderator_values, simulated)
     expanded[exposure_name] = exposure
     return expanded
 
@@ -760,10 +753,30 @@ def _enumerate_binary_regime(
             current = row.copy(deep=True)
             for name, value in zip(mediator_names, state):
                 current[name] = value
-                probability = float(fitted.node_by_response[name].predict_mean(current)[0])
+                try:
+                    probability = float(fitted.node_by_response[name].predict_mean(current)[0])
+                except NodeFitError as exc:
+                    raise _error(
+                        exc.code,
+                        AnalysisStatus.FIT_FAILED,
+                        str(exc),
+                        node=name,
+                        regime=(outcome_exposure, mediator_exposure),
+                        details=dict(exc.details),
+                    ) from exc
                 state_probability *= probability if value == 1.0 else 1.0 - probability
             outcome_frame = _regime_frame(current, plan, outcome_exposure, moderator_values)
-            outcome = float(fitted.outcome_node.predict_mean(outcome_frame)[0])
+            try:
+                outcome = float(fitted.outcome_node.predict_mean(outcome_frame)[0])
+            except NodeFitError as exc:
+                raise _error(
+                    exc.code,
+                    AnalysisStatus.FIT_FAILED,
+                    str(exc),
+                    node=fitted.outcome_node.response,
+                    regime=(outcome_exposure, mediator_exposure),
+                    details=dict(exc.details),
+                ) from exc
             row_total += state_probability * outcome
         total += row_total
     if len(retained) == 0:
@@ -783,10 +796,31 @@ def _gaussian_linear_regime(
     retained = _retained_frame(data, plan)
     mediator_name = _mediator_order(plan)[0]
     mediator_frame = _regime_frame(retained, plan, mediator_exposure, moderator_values)
-    mediator_mean = fitted.node_by_response[mediator_name].predict_mean(mediator_frame)
+    try:
+        mediator_mean = fitted.node_by_response[mediator_name].predict_mean(mediator_frame)
+    except NodeFitError as exc:
+        raise _error(
+            exc.code,
+            AnalysisStatus.FIT_FAILED,
+            str(exc),
+            node=mediator_name,
+            regime=(outcome_exposure, mediator_exposure),
+            details=dict(exc.details),
+        ) from exc
     outcome_frame = _regime_frame(retained, plan, outcome_exposure, moderator_values)
     outcome_frame[mediator_name] = mediator_mean
-    return float(np.asarray(fitted.outcome_node.predict_mean(outcome_frame), dtype=float).mean())
+    try:
+        outcome_mean = fitted.outcome_node.predict_mean(outcome_frame)
+    except NodeFitError as exc:
+        raise _error(
+            exc.code,
+            AnalysisStatus.FIT_FAILED,
+            str(exc),
+            node=fitted.outcome_node.response,
+            regime=(outcome_exposure, mediator_exposure),
+            details=dict(exc.details),
+        ) from exc
+    return float(np.asarray(outcome_mean, dtype=float).mean())
 
 
 def _compute_means_with_system(data: pd.DataFrame, fitted: FittedSystem, draws: CommonDraws) -> RegimeMeans:
