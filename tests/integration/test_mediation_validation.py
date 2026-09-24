@@ -20,6 +20,7 @@ from mintmed.experiments.mediation_validation import (
     generate_cell,
     load_config,
     metric_record,
+    selected_combinations,
     seed_pair,
 )
 from mintmed.experiments.mediation_validation_reporting import (
@@ -432,3 +433,28 @@ def test_write_report_emits_required_artifacts_without_private_row_fields(tmp_pa
     assert "row_indices" not in summary_text
     assert "participant" not in summary_text.lower()
     assert "Stress diagnostics" in report_text
+
+
+def test_selected_combinations_are_registry_ordered_and_filterable() -> None:
+    config = load_config(SMOKE)
+
+    selected = selected_combinations(
+        config,
+        cell_ids=("cell12_mixed_binary_serial_n250", "cell01_linear_n100"),
+        replicate_start=0,
+        replicate_stop=1,
+    )
+
+    assert selected == (
+        ("cell01_linear_n100", 0),
+        ("cell12_mixed_binary_serial_n250", 0),
+    )
+
+
+def test_selected_combinations_reject_conflicting_or_empty_filters() -> None:
+    config = load_config(SMOKE)
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        selected_combinations(config, replicate=0, replicate_start=0, replicate_stop=1)
+    with pytest.raises(ValueError, match="nonempty"):
+        selected_combinations(config, replicate_start=1, replicate_stop=1)

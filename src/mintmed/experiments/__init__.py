@@ -9,9 +9,11 @@ from .mediation_validation import (
     cell_truth,
     expected_combinations,
     expected_row_count,
+    extract_metrics,
     generate_cell,
     load_config,
     metric_record,
+    selected_combinations,
     run,
     seed_pair,
 )
@@ -25,9 +27,11 @@ __all__ = [
     "cell_truth",
     "expected_combinations",
     "expected_row_count",
+    "extract_metrics",
     "generate_cell",
     "load_config",
     "metric_record",
+    "selected_combinations",
     "run",
     "seed_pair",
 ]
