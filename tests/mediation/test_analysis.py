@@ -10,6 +10,7 @@ import pytest
 
 import mintmed
 from mintmed.simulation import sample_fixture
+from mintmed.types import AnalysisStatus, BootstrapResult, EffectEstimate
 
 
 def _fixture(name: str = "linear", *, n: int = 80, bootstrap: int = 0):
@@ -74,3 +75,91 @@ def test_wrong_public_input_types_are_programmer_errors() -> None:
         mintmed.analyze_mediation(data.to_dict(), spec)
     with pytest.raises(TypeError, match="spec must be a ModelSpec"):
         mintmed.analyze_mediation(data, spec.to_canonical_dict())
+
+
+def test_diagnostics_assembly_copies_plan_fit_and_integration_contracts() -> None:
+    from mintmed.diagnostics import assemble_diagnostics
+    from mintmed.gformula import fit_system
+    from mintmed.spec import estimate_plan
+
+    data, spec = _fixture(n=80)
+    plan = estimate_plan(data, spec)
+    fitted = fit_system(data, plan)
+
+    diagnostics = assemble_diagnostics(
+        plan,
+        fitted,
+        overall_status="point_only",
+    )
+
+    assert set(
+        (
+            "overall_status",
+            "rows",
+            "missing",
+            "participant_id",
+            "support",
+            "binary_counts",
+            "scientific",
+            "nodes",
+            "integration",
+            "bootstrap",
+            "moderation",
+            "warnings",
+            "assumptions",
+            "exclusions",
+            "error",
+            "stage",
+        )
+    ).issubset(diagnostics)
+    assert diagnostics["overall_status"] == "point_only"
+    assert diagnostics["rows"] == plan.diagnostics["rows"]
+    assert diagnostics["scientific"]["factorization_order"] == ["M"]
+    assert diagnostics["nodes"][0]["response"] == "M"
+    assert diagnostics["nodes"][0]["parameter_count"] == fitted.nodes[0].parameter_count
+    assert diagnostics["integration"]["method"] == fitted.integration_method
+    assert diagnostics["integration"]["accepted_draw_budget"] == fitted.draw_budget
+    assert diagnostics["bootstrap"]["status"] == "not_requested"
+    assert any("observed-variable" in item for item in diagnostics["assumptions"])
+
+
+def test_diagnostics_assembly_preserves_bootstrap_failures_and_intervals() -> None:
+    from mintmed.diagnostics import assemble_diagnostics
+    from mintmed.gformula import fit_system
+    from mintmed.spec import estimate_plan
+
+    data, spec = _fixture(n=80)
+    plan = estimate_plan(data, spec)
+    fitted = fit_system(data, plan)
+    bootstrap = BootstrapResult(
+        requested=4,
+        attempted=4,
+        successful=3,
+        failed=1,
+        intervals=(
+            EffectEstimate(
+                name="TE",
+                estimate=0.3,
+                lower=None,
+                upper=None,
+                status=AnalysisStatus.INTERVAL_UNAVAILABLE,
+                reason="bootstrap_failure_threshold",
+            ),
+        ),
+        status=AnalysisStatus.INTERVAL_UNAVAILABLE,
+        failure_counts={"fit_failed": 1},
+        metadata={"eligible": False},
+    )
+
+    diagnostics = assemble_diagnostics(
+        plan,
+        fitted,
+        bootstrap=bootstrap,
+        overall_status="point_only",
+    )
+
+    assert diagnostics["bootstrap"]["requested"] == 4
+    assert diagnostics["bootstrap"]["successful"] == 3
+    assert diagnostics["bootstrap"]["failed"] == 1
+    assert diagnostics["bootstrap"]["failure_counts"] == {"fit_failed": 1}
+    assert diagnostics["bootstrap"]["intervals"][0]["interval_available"] is False
