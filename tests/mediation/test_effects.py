@@ -50,6 +50,16 @@ def test_nonfinite_means_are_explicit_failures_not_silent_zeroes():
     assert all(effect.reason == "nonfinite_regime_mean" for effect in effects)
 
 
+def test_decomposition_identity_failure_keeps_arithmetic_values():
+    effects = natural_effects(
+        RegimeMeans(mu_00=0.1, mu_10=0.3, mu_11=0.6),
+        numerical_tolerance=0.0,
+    )
+    assert all(effect.status is AnalysisStatus.INTEGRATION_FAILED for effect in effects)
+    assert all(effect.reason == "effect_decomposition_identity_failed" for effect in effects)
+    assert tuple(effect.estimate for effect in effects) == pytest.approx((0.5, 0.19999999999999998, 0.3))
+
+
 def _fit_fixture(name: str, *, n: int = 120, tolerance: float = 1.0):
     fixture = sample_fixture(name, n, np.random.default_rng(20260920 + n))
     spec = replace(
