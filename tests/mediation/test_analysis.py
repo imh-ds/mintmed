@@ -259,6 +259,21 @@ def test_invalid_specification_returns_canonical_hash_and_location() -> None:
     assert result.analysis_hash == ""
 
 
+def test_uncanonicalizable_invalid_specification_uses_empty_hash() -> None:
+    data, spec = _fixture(n=120)
+    invalid = replace(
+        spec,
+        contrast=replace(spec.contrast, moderator_values={"unknown": object()}),
+    )
+
+    result = mintmed.analyze_mediation(data, invalid)
+
+    assert result.status is AnalysisStatus.UNSUPPORTED
+    assert result.diagnostics["overall_status"] == "invalid_specification"
+    assert result.specification_hash == ""
+    assert result.provenance["specification_hash"] == ""
+
+
 def test_fit_failure_preserves_typed_stage_and_skips_bootstrap(monkeypatch) -> None:
     import mintmed.api as api
     from mintmed.gformula import GFormulaError

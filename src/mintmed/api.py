@@ -55,7 +55,11 @@ def _json_safe(value: Any) -> Any:
 def _specification_hash(spec: ModelSpec) -> str:
     """Hash a canonical specification when no data-dependent plan exists."""
 
-    return sha256(spec.canonical_json().encode("utf-8")).hexdigest()
+    try:
+        canonical = spec.canonical_json()
+    except (TypeError, ValueError, OverflowError):
+        return ""
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _issue_for_exception(exc: Exception) -> Issue:
