@@ -478,6 +478,82 @@ def _effect_difference(
     )
 
 
+def _validate_moderator_configuration(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    values: Mapping[str, object],
+) -> None:
+    """Apply Task 4-style finite, declared-level, and support checks."""
+
+    required = tuple(plan.contrast.moderator_values)
+    missing = tuple(name for name in required if name not in values)
+    if missing:
+        raise GFormulaError(
+            code="missing_moderators",
+            status=AnalysisStatus.FIT_FAILED,
+            message="moderator configuration is missing declared fixed values",
+            details={"missing": missing},
+        )
+    category_levels: dict[str, tuple[object, ...]] = {}
+    for node in fitted.nodes:
+        for name, levels in node.design.category_levels.items():
+            category_levels[name] = tuple(levels)
+    for name, value in values.items():
+        if name not in data.columns:
+            raise GFormulaError(
+                code="unknown_moderator",
+                status=AnalysisStatus.FIT_FAILED,
+                message=f"moderator {name!r} is not available in the analysis data",
+            )
+        try:
+            missing_value = bool(pd.isna(value))
+        except (TypeError, ValueError):
+            missing_value = False
+        if value is None or missing_value:
+            raise GFormulaError(
+                code="unsupported_extrapolation",
+                status=AnalysisStatus.UNSUPPORTED,
+                message="moderator counterfactual value must be finite",
+                details={"moderator": name, "value": value},
+            )
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            numeric_value = None
+        if numeric_value is not None and not np.isfinite(numeric_value):
+            raise GFormulaError(
+                code="unsupported_extrapolation",
+                status=AnalysisStatus.UNSUPPORTED,
+                message="moderator counterfactual value must be finite",
+                details={"moderator": name, "value": value},
+            )
+        if name in category_levels and value not in category_levels[name]:
+            raise GFormulaError(
+                code="unsupported_extrapolation",
+                status=AnalysisStatus.UNSUPPORTED,
+                message="moderator value is not a declared category level",
+                details={"moderator": name, "value": value},
+            )
+        retained = data.loc[list(plan.retained_row_indices), name]
+        if name in category_levels:
+            supported = bool(retained.eq(value).any())
+        else:
+            try:
+                observed_min = float(retained.min())
+                observed_max = float(retained.max())
+                supported = observed_min <= float(value) <= observed_max
+            except (TypeError, ValueError):
+                supported = False
+        if not supported:
+            raise GFormulaError(
+                code="unsupported_extrapolation",
+                status=AnalysisStatus.UNSUPPORTED,
+                message="moderator counterfactual is outside retained observed support",
+                details={"moderator": name, "value": value},
+            )
+
+
 def moderator_contrasts(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -505,11 +581,15 @@ def moderator_contrasts(
             message="baseline_values is missing requested moderators",
             details={"missing": missing},
         )
-
-    contrasts: list[ModeratorContrast] = []
+    ordered_values: dict[str, tuple[object, ...]] = {}
     for moderator, values in moderator_values.items():
         if isinstance(values, (str, bytes)):
             raise TypeError("moderator value sequences must not be strings")
+        ordered_values[moderator] = tuple(values)
+    _validate_moderator_configuration(data, plan, fitted, baseline)
+
+    contrasts: list[ModeratorContrast] = []
+    for moderator, values in ordered_values.items():
         baseline_configuration = dict(baseline)
         baseline_effects = natural_effects(
             _regime_means_at_moderators(data, plan, fitted, draws, baseline_configuration),
@@ -522,6 +602,7 @@ def moderator_contrasts(
         for value in values:
             configuration = dict(baseline)
             configuration[moderator] = value
+            _validate_moderator_configuration(data, plan, fitted, configuration)
             effects = natural_effects(
                 _regime_means_at_moderators(data, plan, fitted, draws, configuration),
                 exposure_reference=plan.contrast.reference,
@@ -562,6 +643,12 @@ def moderator_contrasts(
                         "interpretation": plan.contrast.interpretation,
                         "standardization_population": "retained_analysis_rows",
                         "numerical_tolerance": tolerance,
+                        "moderator": moderator,
+                        "value": value,
+                        "baseline_value": baseline[moderator],
+                        "draw_seed": draws.seed,
+                        "draw_budget": draws.draw_count,
+                        "paired_draws": True,
                     },
                 )
             )

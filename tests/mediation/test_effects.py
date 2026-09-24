@@ -167,6 +167,9 @@ def test_moderator_values_use_all_rows_and_paired_draws():
     )
     assert tuple((item.moderator, item.value) for item in contrasts) == (("W", 0.0), ("W", 1.0))
     assert all(len(item.differences) == 3 for item in contrasts)
+    assert contrasts[1].metadata["paired_draws"] is True
+    assert contrasts[1].metadata["draw_seed"] == fitted.draws.seed
+    assert contrasts[1].metadata["draw_budget"] == fitted.draws.draw_count
     assert contrasts == moderator_contrasts(
         fixture.data,
         plan,
@@ -174,6 +177,21 @@ def test_moderator_values_use_all_rows_and_paired_draws():
         fitted.draws,
         moderator_values={"W": (0.0, 1.0)},
     )
+
+
+def test_moderator_contrasts_reject_unsupported_values_with_typed_error():
+    from mintmed.gformula import GFormulaError
+
+    fixture, plan, fitted = _moderated_fit()
+    with pytest.raises(GFormulaError) as caught:
+        moderator_contrasts(
+            fixture.data,
+            plan,
+            fitted,
+            fitted.draws,
+            moderator_values={"W": (2.0,)},
+        )
+    assert caught.value.code == "unsupported_extrapolation"
 
 
 def test_parallel_contributions_refuse_nonparallel_structure():
