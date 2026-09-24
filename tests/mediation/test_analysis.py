@@ -68,6 +68,18 @@ def test_linear_result_contains_auditable_hashes_and_provenance() -> None:
     assert "row_values" not in serialized
 
 
+def test_bootstrap_reporting_mode_is_preserved_in_provenance() -> None:
+    data, spec = _fixture(n=120)
+    spec = replace(
+        spec,
+        computation=replace(spec.computation, bootstrap_mode="quick_diagnostic"),
+    )
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.provenance["bootstrap_mode"] == "quick_diagnostic"
+
+
 def test_wrong_public_input_types_are_programmer_errors() -> None:
     data, spec = _fixture()
 

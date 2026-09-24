@@ -124,6 +124,29 @@ def test_valid_yaml_loads_to_typed_model_spec(tmp_path: Path) -> None:
     assert spec.computation.seed == 20260919
 
 
+def test_bootstrap_mode_defaults_and_is_canonicalized(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    spec = load_model_spec(_write_spec(tmp_path, value))
+
+    assert spec.computation.bootstrap_mode == "standard"
+    assert '"bootstrap_mode":"standard"' in spec.canonical_json()
+
+    value["computation"]["bootstrap_mode"] = "quick_diagnostic"  # type: ignore[index]
+    quick = load_model_spec(_write_spec(tmp_path, value))
+    assert quick.computation.bootstrap_mode == "quick_diagnostic"
+    assert quick.canonical_json() != spec.canonical_json()
+
+
+def test_invalid_bootstrap_mode_has_a_typed_error(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["computation"]["bootstrap_mode"] = "fast"  # type: ignore[index]
+
+    caught = _error_for(tmp_path, value)
+
+    assert caught.code == "invalid_computation"
+    assert caught.path == "computation.bootstrap_mode"
+
+
 def test_template_compilation_produces_a_valid_equivalent_shape() -> None:
     template = TemplateSpec(
         exposure=VariableSpec(

@@ -225,6 +225,7 @@ def _build_provenance(
         "patsy_version": patsy.__version__,
         "seed": int(spec.computation.seed),
         "bootstrap_requested": int(spec.computation.bootstrap),
+        "bootstrap_mode": spec.computation.bootstrap_mode,
         "integration_initial_draws": int(spec.computation.integration_draws),
         "integration_tolerance": float(spec.computation.integration_tolerance),
         "integration_method": fitted.integration_method if fitted is not None else None,
@@ -478,6 +479,7 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
             "standardization_population": "retained_analysis_rows",
             "integration_method": fitted.integration_method,
             "integration_status": fitted.status.value,
+            "bootstrap_mode": plan.computation.bootstrap_mode,
         },
     )
 

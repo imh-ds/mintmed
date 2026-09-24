@@ -205,6 +205,7 @@ class ComputationSpec:
     max_seconds: int | None = None
     memory_budget_mb: int | None = None
     information: bool = False
+    bootstrap_mode: str = "standard"
 
 
 @dataclass(frozen=True, slots=True)
@@ -496,6 +497,7 @@ def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
         "support": support,
         "binary_counts": binary_counts,
         "scientific_edges": [list(edge) for edge in spec.scientific.edges],
+        "arrangement": spec.scientific.arrangement,
         "factorization_order": list(spec.scientific.mediator_order),
         "nodes": [
             {
@@ -961,7 +963,16 @@ def _parse_computation(value: Any) -> ComputationSpec:
     mapping = _mapping(value, path, "computation")
     _keys(
         mapping,
-        {"seed", "bootstrap", "integration_draws", "integration_tolerance", "max_seconds", "memory_budget_mb", "information"},
+        {
+            "seed",
+            "bootstrap",
+            "integration_draws",
+            "integration_tolerance",
+            "max_seconds",
+            "memory_budget_mb",
+            "information",
+            "bootstrap_mode",
+        },
         path,
         required={"seed", "bootstrap", "integration_draws"},
     )
@@ -980,7 +991,24 @@ def _parse_computation(value: Any) -> ComputationSpec:
     information = mapping.get("information", False)
     if not isinstance(information, bool):
         _fail("invalid_computation", f"{path}.information", "information must be boolean")
-    return ComputationSpec(seed, bootstrap, integration_draws, float(tolerance), max_seconds, memory_budget, information)
+    bootstrap_mode = mapping.get("bootstrap_mode", "standard")
+    bootstrap_mode = _string(bootstrap_mode, f"{path}.bootstrap_mode")
+    if bootstrap_mode not in {"standard", "quick_diagnostic"}:
+        _fail(
+            "invalid_computation",
+            f"{path}.bootstrap_mode",
+            "bootstrap_mode must be 'standard' or 'quick_diagnostic'",
+        )
+    return ComputationSpec(
+        seed,
+        bootstrap,
+        integration_draws,
+        float(tolerance),
+        max_seconds,
+        memory_budget,
+        information,
+        bootstrap_mode,
+    )
 
 
 def _validate_model(spec: ModelSpec) -> None:
