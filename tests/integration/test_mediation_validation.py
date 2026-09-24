@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+import pandas as pd
 
 from mintmed.experiments.mediation_validation import (
     COMBINATION_COLUMNS,
@@ -20,6 +21,12 @@ from mintmed.experiments.mediation_validation import (
     load_config,
     metric_record,
     seed_pair,
+)
+from mintmed.experiments.mediation_validation_reporting import (
+    expand_metrics,
+    summarize_metrics,
+    wilson,
+    write_report,
 )
 
 
@@ -346,3 +353,82 @@ def test_structured_failure_extraction_preserves_error_and_null_estimates() -> N
     assert metrics["TE"]["lower"] is None
     assert metrics["TE"]["status"] == "fit_failed"
     assert metrics["TE"]["reason"] == "node_fit_failed"
+
+
+def _raw_row(cell_id: str, replicate: int, metrics: dict[str, dict[str, object]], config_hash: str) -> dict[str, object]:
+    first = next(iter(metrics.values()))
+    return {
+        "cell_id": cell_id,
+        "replicate": replicate,
+        "data_seed": 1,
+        "analysis_seed": 2,
+        "config_hash": config_hash,
+        "truth_method": "closed_form",
+        "outcome_kind": "continuous",
+        "estimand": next(iter(metrics)),
+        "truth": first["truth"],
+        "estimate": first["estimate"],
+        "bias": first["bias"],
+        "lower": first["lower"],
+        "upper": first["upper"],
+        "coverage": first["coverage"],
+        "width": first["width"],
+        "zero_exclusion": first["zero_exclusion"],
+        "interval_available": first["interval_available"],
+        "status": first["status"],
+        "failure_code": None,
+        "failure_message": None,
+        "runtime_seconds": 0.1,
+        "fit_count": 2,
+        "draw_budget": 256,
+        "metrics_json": json.dumps(metrics),
+        "provenance_json": json.dumps({"config_hash": config_hash}),
+    }
+
+
+def test_wilson_handles_empty_and_boundary_counts() -> None:
+    assert wilson(0, 0) == (None, None)
+    lower, upper = wilson(0, 10)
+    assert lower == pytest.approx(0.0)
+    assert 0.0 < upper < 1.0
+    lower, upper = wilson(10, 10)
+    assert 0.0 < lower < 1.0
+    assert upper == pytest.approx(1.0)
+
+
+def test_metric_expansion_and_summary_count_unavailable_intervals_as_noncoverage() -> None:
+    config = load_config(SMOKE)
+    metrics = {
+        "TE": metric_record(0.45, 0.44, 0.2, 0.7, status="complete"),
+        "PNDE": metric_record(0.2, 0.21, None, None, status="point_only", reason="no_interval"),
+        "TNIE": metric_record(0.25, 0.23, 0.1, 0.5, status="complete"),
+    }
+    raw = pd.DataFrame([_raw_row("cell01_linear_n100", 0, metrics, config.config_hash)])
+
+    long = expand_metrics(raw, config)
+    summary = summarize_metrics(long, raw, config)
+
+    pnde = summary.loc[(summary.cell_id == "cell01_linear_n100") & (summary.metric == "PNDE")].iloc[0]
+    assert int(pnde.attempted_rows) == 1
+    assert int(pnde.unavailable_interval_rows) == 1
+    assert int(pnde.coverage_trials) == 1
+    assert int(pnde.coverage_successes) == 0
+    assert pnde.coverage == pytest.approx(0.0)
+
+
+def test_write_report_emits_required_artifacts_without_private_row_fields(tmp_path: Path) -> None:
+    config = load_config(SMOKE)
+    metrics = {
+        "TNIE": metric_record(0.25, None, None, None, status="fit_failed", reason="node_fit_failed")
+    }
+    raw = pd.DataFrame([_raw_row("cell06_parallel_interaction_n150", 0, metrics, config.config_hash)])
+    write_report(raw, config, tmp_path)
+
+    for artifact in ("raw_metrics.csv", "cell_summary.csv", "summary.json", "report.md"):
+        assert (tmp_path / artifact).is_file()
+    summary_text = (tmp_path / "summary.json").read_text(encoding="utf-8")
+    report_text = (tmp_path / "report.md").read_text(encoding="utf-8")
+    assert "row_positions" not in summary_text
+    assert "row_indices" not in summary_text
+    assert "participant" not in summary_text.lower()
+    assert "Stress diagnostics" in report_text
