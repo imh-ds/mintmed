@@ -15,6 +15,7 @@ from mintmed.experiments.mediation_validation import (
     cell_truth,
     expected_combinations,
     expected_row_count,
+    extract_metrics,
     generate_cell,
     load_config,
     metric_record,
@@ -253,3 +254,95 @@ def test_binary_truths_use_probability_difference_units_and_quadrature() -> None
         assert definition.truth_method == "gauss_hermite_64"
         assert definition.population_outcome_sd is None
         assert all(-1.0 <= value <= 1.0 for value in cell_truth(cell_id))
+
+
+def test_standard_payload_extracts_point_effects_and_bootstrap_intervals() -> None:
+    payload = {
+        "overall_status": "complete",
+        "effects": [
+            {"name": "TE", "estimate": 0.4, "lower": None, "upper": None, "status": "ok", "reason": None},
+            {"name": "PNDE", "estimate": 0.2, "lower": None, "upper": None, "status": "ok", "reason": None},
+            {"name": "TNIE", "estimate": 0.2, "lower": None, "upper": None, "status": "ok", "reason": None},
+        ],
+        "bootstrap": {
+            "intervals": [
+                {"name": "TE", "lower": 0.1, "upper": 0.7, "status": "ok", "reason": None},
+                {"name": "PNDE", "lower": 0.0, "upper": 0.4, "status": "ok", "reason": None},
+                {"name": "TNIE", "lower": -0.1, "upper": 0.5, "status": "ok", "reason": None},
+            ]
+        },
+        "diagnostics": {},
+        "provenance": {},
+    }
+
+    metrics = extract_metrics(payload, "cell01_linear_n100")
+
+    assert tuple(metrics) == ("TE", "PNDE", "TNIE")
+    assert metrics["TNIE"]["estimate"] == pytest.approx(0.2)
+    assert metrics["TNIE"]["lower"] == pytest.approx(-0.1)
+    assert metrics["TNIE"]["upper"] == pytest.approx(0.5)
+
+
+def test_cell_ten_payload_extracts_direct_points_and_paired_difference_interval() -> None:
+    payload = {
+        "overall_status": "complete_with_warnings",
+        "effects": [],
+        "bootstrap": {
+            "intervals": [
+                {
+                    "name": "moderator_difference__W__1__TNIE",
+                    "lower": 0.01,
+                    "upper": 0.52,
+                    "status": "ok",
+                    "reason": None,
+                }
+            ]
+        },
+        "diagnostics": {
+            "moderation": {
+                "contrasts": [
+                    {
+                        "moderator": "W",
+                        "value": 0,
+                        "effects": [{"name": "TNIE", "estimate": 0.09, "lower": None, "upper": None, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
+                        "differences": [],
+                    },
+                    {
+                        "moderator": "W",
+                        "value": 1,
+                        "effects": [{"name": "TNIE", "estimate": 0.36, "lower": None, "upper": None, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
+                        "differences": [],
+                    },
+                ]
+            }
+        },
+        "provenance": {},
+    }
+
+    metrics = extract_metrics(payload, "cell10_moderated_n150")
+
+    assert metrics["TNIE_W0"]["estimate"] == pytest.approx(0.09)
+    assert metrics["TNIE_W0"]["lower"] is None
+    assert metrics["TNIE_W1"]["estimate"] == pytest.approx(0.36)
+    assert metrics["TNIE_difference"]["lower"] == pytest.approx(0.01)
+    assert metrics["TNIE_difference"]["upper"] == pytest.approx(0.52)
+
+
+def test_structured_failure_extraction_preserves_error_and_null_estimates() -> None:
+    payload = {
+        "overall_status": "fit_failed",
+        "effects": [],
+        "bootstrap": None,
+        "diagnostics": {
+            "error": {"code": "node_fit_failed", "message": "locked node could not be fitted"},
+            "nodes": [],
+        },
+        "provenance": {},
+    }
+
+    metrics = extract_metrics(payload, "cell01_linear_n100")
+
+    assert metrics["TE"]["estimate"] is None
+    assert metrics["TE"]["lower"] is None
+    assert metrics["TE"]["status"] == "fit_failed"
+    assert metrics["TE"]["reason"] == "node_fit_failed"

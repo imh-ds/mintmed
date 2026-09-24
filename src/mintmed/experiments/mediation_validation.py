@@ -9,11 +9,15 @@ can inspect a design without importing or fitting a model.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import csv
 import hashlib
 import json
 import math
+import os
+import platform
 from pathlib import Path
+import time
 from typing import Any, Callable
 
 import numpy as np
@@ -758,10 +762,457 @@ def generate_cell(cell_id: str, data_seed: int) -> SimulationFixture:
     return _GENERATORS[cell.generator_name](rng, cell)
 
 
-def run(*_args: Any, **_kwargs: Any) -> Any:
-    """Execution boundary placeholder completed by the runner implementation."""
+def _effect_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    return {
+        str(effect.get("name")): effect
+        for effect in payload.get("effects", ())
+        if isinstance(effect, Mapping) and effect.get("name") is not None
+    }
 
-    raise NotImplementedError("validation execution is not implemented yet")
+
+def _interval_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    bootstrap = payload.get("bootstrap")
+    if not isinstance(bootstrap, Mapping):
+        return {}
+    return {
+        str(effect.get("name")): effect
+        for effect in bootstrap.get("intervals", ())
+        if isinstance(effect, Mapping) and effect.get("name") is not None
+    }
+
+
+def _metric_from_effect(
+    truth: float,
+    point: Mapping[str, Any] | None,
+    interval: Mapping[str, Any] | None,
+    *,
+    status: str,
+    reason: str | None,
+) -> dict[str, Any]:
+    point = point or {}
+    interval = interval or {}
+    estimate = point.get("estimate")
+    lower = interval.get("lower", point.get("lower"))
+    upper = interval.get("upper", point.get("upper"))
+    point_reason = point.get("reason")
+    return metric_record(
+        truth,
+        None if estimate is None else float(estimate),
+        None if lower is None else float(lower),
+        None if upper is None else float(upper),
+        status=str(point.get("status", status)),
+        reason=reason or interval.get("reason") or point_reason,
+    )
+
+
+def extract_metrics(payload: Mapping[str, Any], cell_id: str) -> dict[str, dict[str, Any]]:
+    """Extract the fixed metrics from one public ``result_to_dict`` payload."""
+
+    definition = cell_definition(cell_id)
+    overall_status = str(payload.get("overall_status") or "unknown")
+    error = payload.get("diagnostics", {}).get("error") if isinstance(payload.get("diagnostics"), Mapping) else None
+    failure_reason = str(error.get("code")) if isinstance(error, Mapping) and error.get("code") else None
+    effects = _effect_index(payload)
+    intervals = _interval_index(payload)
+
+    if cell_id != "cell10_moderated_n150":
+        truth = dict(zip(("TE", "PNDE", "TNIE"), cell_truth(cell_id)))
+        return {
+            name: _metric_from_effect(
+                truth[name],
+                effects.get(name),
+                intervals.get(name),
+                status=overall_status,
+                reason=failure_reason,
+            )
+            for name in definition.metric_names
+        }
+
+    truth = {"TNIE_W0": 0.09, "TNIE_W1": 0.36, "TNIE_difference": 0.27}
+    moderation = payload.get("diagnostics", {}).get("moderation", {})
+    contrasts = moderation.get("contrasts", ()) if isinstance(moderation, Mapping) else ()
+    direct: dict[int, Mapping[str, Any]] = {}
+    difference_point: Mapping[str, Any] | None = None
+    for contrast in contrasts:
+        if not isinstance(contrast, Mapping):
+            continue
+        try:
+            value = int(float(contrast.get("value")))
+        except (TypeError, ValueError):
+            continue
+        contrast_effects = contrast.get("effects", ())
+        for effect in contrast_effects:
+            if isinstance(effect, Mapping) and effect.get("name") == "TNIE":
+                direct[value] = effect
+        for effect in contrast.get("differences", ()):
+            if isinstance(effect, Mapping) and effect.get("name") == "TNIE":
+                difference_point = effect
+    if difference_point is None and 0 in direct and 1 in direct:
+        left = direct[0].get("estimate")
+        right = direct[1].get("estimate")
+        if left is not None and right is not None:
+            difference_point = {"estimate": float(right) - float(left), "status": overall_status}
+    return {
+        "TNIE_W0": _metric_from_effect(
+            truth["TNIE_W0"], direct.get(0), None, status=overall_status,
+            reason=(direct.get(0) or {}).get("reason") if direct.get(0) else failure_reason,
+        ),
+        "TNIE_W1": _metric_from_effect(
+            truth["TNIE_W1"], direct.get(1), None, status=overall_status,
+            reason=(direct.get(1) or {}).get("reason") if direct.get(1) else failure_reason,
+        ),
+        "TNIE_difference": _metric_from_effect(
+            truth["TNIE_difference"],
+            difference_point,
+            intervals.get("moderator_difference__W__1__TNIE"),
+            status=overall_status,
+            reason=failure_reason,
+        ),
+    }
+
+
+def _prepare_spec(fixture: SimulationFixture, config: ValidationConfig, analysis_seed: int) -> Any:
+    computation = replace(
+        fixture.spec.computation,
+        seed=int(analysis_seed),
+        bootstrap=int(config.bootstrap_replicates),
+        bootstrap_mode=config.bootstrap_mode,
+        integration_draws=int(config.integration_draws),
+        integration_tolerance=float(config.integration_tolerance),
+        max_seconds=int(config.max_seconds),
+        memory_budget_mb=int(config.memory_budget_mb),
+    )
+    return replace(fixture.spec, computation=computation)
+
+
+def row_from_payload(
+    payload: Mapping[str, Any],
+    *,
+    config: ValidationConfig,
+    cell: ValidationCell,
+    replicate: int,
+    data_seed: int,
+    analysis_seed: int,
+    runtime_seconds: float,
+) -> dict[str, Any]:
+    metrics = extract_metrics(payload, cell.cell_id)
+    first = metrics[cell.metric_names[0]]
+    diagnostics = payload.get("diagnostics", {})
+    error = diagnostics.get("error") if isinstance(diagnostics, Mapping) else None
+    provenance = payload.get("provenance", {})
+    node_payload = diagnostics.get("nodes", ()) if isinstance(diagnostics, Mapping) else ()
+    fit_count = len(node_payload) if isinstance(node_payload, (Mapping, Sequence)) and not isinstance(node_payload, str) else 0
+    draw_budget = provenance.get("accepted_draw_budget") if isinstance(provenance, Mapping) else None
+    if draw_budget is None and isinstance(diagnostics, Mapping):
+        integration = diagnostics.get("integration", {})
+        if isinstance(integration, Mapping):
+            draw_budget = integration.get("accepted_draw_budget")
+    safe_provenance = {
+        "cell_id": cell.cell_id,
+        "cell_ordinal": cell.ordinal,
+        "n": cell.n,
+        "data_seed": int(data_seed),
+        "analysis_seed": int(analysis_seed),
+        "config_hash": config.config_hash,
+        "truth_method": cell.truth_method,
+        "specification_hash": payload.get("specification_hash"),
+        "analysis_hash": payload.get("analysis_hash"),
+        "bootstrap_requested": config.bootstrap_replicates,
+        "bootstrap_mode": config.bootstrap_mode,
+        "integration_method": provenance.get("integration_method") if isinstance(provenance, Mapping) else None,
+        "accepted_draw_budget": draw_budget,
+    }
+    return {
+        "cell_id": cell.cell_id,
+        "replicate": int(replicate),
+        "data_seed": int(data_seed),
+        "analysis_seed": int(analysis_seed),
+        "config_hash": config.config_hash,
+        "truth_method": cell.truth_method,
+        "outcome_kind": cell.outcome_kind,
+        "estimand": cell.metric_names[0],
+        "truth": first["truth"],
+        "estimate": first["estimate"],
+        "bias": first["bias"],
+        "lower": first["lower"],
+        "upper": first["upper"],
+        "coverage": first["coverage"],
+        "width": first["width"],
+        "zero_exclusion": first["zero_exclusion"],
+        "interval_available": first["interval_available"],
+        "status": str(payload.get("overall_status") or first["status"]),
+        "failure_code": error.get("code") if isinstance(error, Mapping) else None,
+        "failure_message": error.get("message") if isinstance(error, Mapping) else None,
+        "runtime_seconds": float(runtime_seconds),
+        "fit_count": int(fit_count),
+        "draw_budget": draw_budget,
+        "metrics_json": json.dumps(metrics, sort_keys=True, separators=(",", ":")),
+        "provenance_json": json.dumps(safe_provenance, sort_keys=True, separators=(",", ":")),
+    }
+
+
+def selected_combinations(
+    config: ValidationConfig,
+    *,
+    cell_ids: Sequence[str] | None = None,
+    replicate: int | None = None,
+    replicate_start: int = 0,
+    replicate_stop: int | None = None,
+) -> tuple[tuple[str, int], ...]:
+    """Validate CLI filters and return registry-ordered matrix combinations."""
+
+    if replicate is not None and (replicate_start != 0 or replicate_stop is not None):
+        raise ValueError("--replicate cannot be combined with replicate range filters")
+    requested_cells = tuple(cell_ids) if cell_ids is not None else config.cell_ids
+    if not requested_cells:
+        raise ValueError("at least one cell ID must be selected")
+    if len(set(requested_cells)) != len(requested_cells):
+        raise ValueError("cell selection contains duplicate IDs")
+    unknown = set(requested_cells) - set(config.cell_ids)
+    if unknown:
+        raise ValueError(f"selected cell(s) are not in the loaded configuration: {sorted(unknown)}")
+    if replicate is not None:
+        if replicate < 0 or replicate >= config.replicates:
+            raise ValueError("replicate is outside the configured range")
+        replicates = (int(replicate),)
+    else:
+        stop = config.replicates if replicate_stop is None else int(replicate_stop)
+        if replicate_start < 0 or stop > config.replicates or replicate_start >= stop:
+            raise ValueError("replicate range must be nonempty and within the configured range")
+        replicates = tuple(range(int(replicate_start), stop))
+    ordered_cells = sorted(requested_cells, key=lambda value: cell_definition(value).ordinal)
+    return tuple((cell_id, rep) for cell_id in ordered_cells for rep in replicates)
+
+
+def _atomic_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def _read_resume_rows(path: Path, config: ValidationConfig) -> pd.DataFrame:
+    if not path.is_file():
+        return pd.DataFrame(columns=RAW_COLUMNS)
+    raw = pd.read_csv(path, dtype={"cell_id": str, "config_hash": str})
+    if tuple(raw.columns) != RAW_COLUMNS:
+        raise ValueError("raw_metrics.csv columns do not match the frozen raw-row contract")
+    if raw.empty:
+        return pd.DataFrame(columns=RAW_COLUMNS)
+    raw["replicate"] = raw["replicate"].astype(int)
+    if raw.duplicated(subset=list(COMBINATION_COLUMNS)).any():
+        raise ValueError("raw_metrics.csv contains duplicate combination keys")
+    allowed = expected_combinations(config)
+    observed = set(raw[list(COMBINATION_COLUMNS)].itertuples(index=False, name=None))
+    unexpected = observed - allowed
+    if unexpected:
+        raise ValueError(f"raw_metrics.csv contains combinations outside the loaded design: {sorted(unexpected)}")
+    retained = raw.loc[raw["config_hash"].astype(str) == config.config_hash, list(RAW_COLUMNS)].copy()
+    if len(retained) != len(raw):
+        _atomic_text(path, retained.to_csv(index=False, lineterminator="\n"))
+    return retained
+
+
+def _append_row(path: Path, row: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not path.is_file() or path.stat().st_size == 0
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=RAW_COLUMNS, extrasaction="raise", lineterminator="\n")
+        if new_file:
+            writer.writeheader()
+        writer.writerow({column: row.get(column) for column in RAW_COLUMNS})
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _write_metadata(
+    output_dir: Path,
+    config: ValidationConfig,
+    *,
+    runtime_seconds: float,
+    observed_rows: int,
+    stress_written: bool,
+) -> None:
+    metadata = {
+        "schema_version": 1,
+        "experiment": config.experiment,
+        "config_hash": config.config_hash,
+        "combination_columns": list(COMBINATION_COLUMNS),
+        "expected_rows": expected_row_count(config),
+        "observed_rows": int(observed_rows),
+        "runtime_seconds": float(runtime_seconds),
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "stress_separate": bool(stress_written),
+        "git_commit": None,
+        "charter_sha256": None,
+    }
+    _atomic_text(output_dir / "metadata.json", json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+
+
+def _write_stress(
+    config: ValidationConfig,
+    output_dir: Path,
+) -> None:
+    from mintmed.api import analyze_mediation
+    from mintmed.report import result_to_dict
+    from mintmed.simulation import sample_fixture
+
+    rows: list[dict[str, Any]] = []
+    for fixture_index, name in enumerate(config.stress_fixture_names):
+        for replicate in range(config.stress_replicates):
+            seed = int(
+                np.random.SeedSequence(
+                    [config.master_seed, 1300, 90, fixture_index, replicate]
+                ).generate_state(1, dtype=np.uint64)[0]
+            )
+            fixture = sample_fixture(name, config.stress_sample_size, np.random.default_rng(seed))
+            started = time.perf_counter()
+            result = analyze_mediation(fixture.data, fixture.spec)
+            payload = result_to_dict(result)
+            diagnostics = payload.get("diagnostics", {})
+            error = diagnostics.get("error") if isinstance(diagnostics, Mapping) else None
+            rows.append(
+                {
+                    "fixture_name": name,
+                    "replicate": replicate,
+                    "seed": seed,
+                    "sample_size": config.stress_sample_size,
+                    "truth_method": fixture.truth_method,
+                    "status": payload.get("overall_status"),
+                    "failure_code": error.get("code") if isinstance(error, Mapping) else None,
+                    "failure_message": error.get("message") if isinstance(error, Mapping) else None,
+                    "runtime_seconds": time.perf_counter() - started,
+                }
+            )
+    frame = pd.DataFrame(rows)
+    _atomic_text(output_dir / "stress_metrics.csv", frame.to_csv(index=False, lineterminator="\n"))
+
+
+def _analyze_combination(
+    config: ValidationConfig,
+    cell_id: str,
+    replicate: int,
+) -> dict[str, Any]:
+    from mintmed.api import analyze_mediation
+    from mintmed.report import result_to_dict
+
+    cell = cell_definition(cell_id)
+    data_seed, analysis_seed = seed_pair(config.master_seed, cell.ordinal, replicate)
+    fixture = generate_cell(cell_id, data_seed)
+    spec = _prepare_spec(fixture, config, analysis_seed)
+    started = time.perf_counter()
+    result = analyze_mediation(fixture.data, spec)
+    payload = result_to_dict(result)
+    return row_from_payload(
+        payload,
+        config=config,
+        cell=cell,
+        replicate=replicate,
+        data_seed=data_seed,
+        analysis_seed=analysis_seed,
+        runtime_seconds=time.perf_counter() - started,
+    )
+
+
+def run(
+    config: ValidationConfig,
+    output_dir: Path,
+    *,
+    cell_ids: Sequence[str] | None = None,
+    replicate: int | None = None,
+    replicate_start: int = 0,
+    replicate_stop: int | None = None,
+    include_stress: bool = False,
+    stress_only: bool = False,
+    no_report: bool = False,
+) -> pd.DataFrame:
+    """Execute selected combinations with durable, resumable raw rows."""
+
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    _atomic_text(output / "resolved_config.yaml", yaml.safe_dump(config.canonical_dict, sort_keys=False))
+    started = time.perf_counter()
+    selected = () if stress_only else selected_combinations(
+        config,
+        cell_ids=cell_ids,
+        replicate=replicate,
+        replicate_start=replicate_start,
+        replicate_stop=replicate_stop,
+    )
+    raw_path = output / "raw_metrics.csv"
+    existing = _read_resume_rows(raw_path, config) if not stress_only else pd.DataFrame(columns=RAW_COLUMNS)
+    existing_keys = set(existing[list(COMBINATION_COLUMNS)].itertuples(index=False, name=None))
+    for cell_id, replicate_id in selected:
+        if (cell_id, replicate_id) in existing_keys:
+            continue
+        row = _analyze_combination(config, cell_id, replicate_id)
+        _append_row(raw_path, row)
+        existing = pd.concat([existing, pd.DataFrame([row], columns=RAW_COLUMNS)], ignore_index=True)
+        existing_keys.add((cell_id, replicate_id))
+
+    stress_written = bool(include_stress or stress_only)
+    if include_stress or stress_only:
+        if not config.stress_enabled:
+            raise ValueError("stress execution requested but stress.enabled is false")
+        _write_stress(config, output)
+    _write_metadata(
+        output,
+        config,
+        runtime_seconds=time.perf_counter() - started,
+        observed_rows=len(existing),
+        stress_written=stress_written,
+    )
+    if not no_report and not stress_only:
+        from .mediation_validation_reporting import write_report
+
+        write_report(existing, config, output)
+    return existing
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--cell-id", action="append", dest="cell_ids")
+    parser.add_argument("--cell-ids", nargs="+", dest="cell_ids_many")
+    parser.add_argument("--replicate", type=int)
+    parser.add_argument("--replicate-start", type=int, default=0)
+    parser.add_argument("--replicate-stop", type=int)
+    parser.add_argument("--include-stress", action="store_true")
+    parser.add_argument("--stress-only", action="store_true")
+    parser.add_argument("--no-report", action="store_true")
+    try:
+        arguments = parser.parse_args(argv)
+        if arguments.cell_ids and arguments.cell_ids_many:
+            raise ValueError("--cell-id and --cell-ids cannot be combined")
+        selected_cells = arguments.cell_ids or arguments.cell_ids_many
+        config = load_config(arguments.config)
+        run(
+            config,
+            arguments.output,
+            cell_ids=selected_cells,
+            replicate=arguments.replicate,
+            replicate_start=arguments.replicate_start,
+            replicate_stop=arguments.replicate_stop,
+            include_stress=arguments.include_stress,
+            stress_only=arguments.stress_only,
+            no_report=arguments.no_report,
+        )
+    except (OSError, ValueError) as exc:
+        parser.print_usage()
+        print(f"error: {exc}")
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 
 
 __all__ = [
@@ -774,9 +1225,12 @@ __all__ = [
     "cell_truth",
     "expected_combinations",
     "expected_row_count",
+    "extract_metrics",
     "generate_cell",
     "load_config",
     "metric_record",
+    "row_from_payload",
     "run",
+    "selected_combinations",
     "seed_pair",
 ]
