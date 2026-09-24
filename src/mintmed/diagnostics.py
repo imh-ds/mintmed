@@ -34,6 +34,7 @@ class PlanValidationError(ValueError):
             message=str(self),
             status=AnalysisStatus.UNSUPPORTED,
             node=node,
+            path=self.path,
         )
 
 
@@ -72,6 +73,7 @@ class NodeFitError(PlanValidationError):
             message=str(self),
             status=AnalysisStatus.FIT_FAILED,
             node=node or self.response,
+            path=self.path,
         )
 
 
