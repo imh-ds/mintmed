@@ -62,6 +62,39 @@ def test_regime_means_result_contract_is_response_scale():
     assert RegimeMeans(1.0, 2.0, 4.0).total_effect == 3.0
 
 
+def test_standardized_frame_iterator_matches_public_regime_mean():
+    from mintmed.gformula import _iter_standardized_blocks, standardize_regime
+
+    fixture, plan, fitted = _fit("serial_two", n=90, tolerance=1.0)
+    assert fitted.draws is not None
+    expected = standardize_regime(
+        fixture.data,
+        plan,
+        fitted,
+        outcome_exposure=1,
+        mediator_exposure=0,
+        moderator_values=plan.contrast.moderator_values,
+        draws=fitted.draws,
+    )
+    total = 0.0
+    count = 0
+    for frame in _iter_standardized_blocks(
+        fixture.data,
+        plan,
+        fitted,
+        outcome_exposure=1,
+        mediator_exposure=0,
+        moderator_values=plan.contrast.moderator_values,
+        draws=fitted.draws,
+    ):
+        assert {"A", "M1", "M2", "Y"}.issubset(frame.columns)
+        assert frame["A"].eq(1).all()
+        values = fitted.outcome_node.predict_mean(frame)
+        total += float(values.sum())
+        count += len(values)
+    assert total / count == pytest.approx(expected, abs=1e-12)
+
+
 def _fit(name: str, n: int = 80, *, tolerance: float | None = None):
     fixture = sample_fixture(name, n, np.random.default_rng(20260920 + n))
     spec = fixture.spec

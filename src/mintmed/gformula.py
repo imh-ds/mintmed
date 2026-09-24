@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import product
 from typing import Any
@@ -563,8 +563,8 @@ def _mediator_noise(
     return base
 
 
-def _standardize_block(
-    block: pd.DataFrame,
+def _iter_standardized_blocks(
+    data: pd.DataFrame,
     plan: AnalysisPlan,
     fitted: FittedSystem,
     *,
@@ -572,59 +572,51 @@ def _standardize_block(
     mediator_exposure: object,
     moderator_values: Mapping[str, object],
     draws: CommonDraws,
-) -> tuple[float, int]:
-    simulated: dict[str, np.ndarray] = {}
-    noises = _mediator_noise(fitted, draws, len(block))
+    block_size: int = BLOCK_SIZE,
+) -> Iterator[pd.DataFrame]:
+    """Yield complete outcome predictor frames in participant-major order."""
+
+    _validate_standardization_inputs(plan, fitted, moderator_values, draws)
+    if isinstance(block_size, bool) or not isinstance(block_size, (int, np.integer)) or block_size <= 0:
+        raise ValueError("block_size must be a positive integer")
+    retained = _retained_frame(data, plan)
     exposure_name = _find_exposure_name(plan)
-    for index, mediator_name in enumerate(_mediator_order(plan)):
-        predictors = _prepare_expanded(
+    for start in range(0, len(retained), int(block_size)):
+        block = retained.iloc[start : start + int(block_size)].copy(deep=True)
+        simulated: dict[str, np.ndarray] = {}
+        noises = _mediator_noise(fitted, draws, len(block))
+        for index, mediator_name in enumerate(_mediator_order(plan)):
+            predictors = _prepare_expanded(
+                block,
+                draws.draw_count,
+                exposure_name,
+                mediator_exposure,
+                moderator_values,
+                simulated,
+            )
+            node = fitted.node_by_response[mediator_name]
+            try:
+                sampled = node.sample(predictors, noises[index].reshape(-1))
+            except NodeFitError as exc:
+                raise _error(
+                    exc.code,
+                    AnalysisStatus.FIT_FAILED,
+                    str(exc),
+                    node=mediator_name,
+                    regime=(outcome_exposure, mediator_exposure),
+                    details=dict(exc.details),
+                ) from exc
+            simulated[mediator_name] = np.asarray(sampled, dtype=float).reshape(
+                len(block), draws.draw_count
+            )
+        yield _prepare_expanded(
             block,
             draws.draw_count,
             exposure_name,
-            mediator_exposure,
+            outcome_exposure,
             moderator_values,
             simulated,
         )
-        node = fitted.node_by_response[mediator_name]
-        try:
-            sampled = node.sample(predictors, noises[index].reshape(-1))
-        except NodeFitError as exc:
-            raise _error(
-                exc.code,
-                AnalysisStatus.FIT_FAILED,
-                str(exc),
-                node=mediator_name,
-                regime=(outcome_exposure, mediator_exposure),
-                details=dict(exc.details),
-            ) from exc
-        simulated[mediator_name] = np.asarray(sampled, dtype=float).reshape(len(block), draws.draw_count)
-    outcome_frame = _prepare_expanded(
-        block,
-        draws.draw_count,
-        exposure_name,
-        outcome_exposure,
-        moderator_values,
-        simulated,
-    )
-    try:
-        outcome_mean = fitted.outcome_node.predict_mean(outcome_frame)
-    except NodeFitError as exc:
-        raise _error(
-            exc.code,
-            AnalysisStatus.FIT_FAILED,
-            str(exc),
-            node=fitted.outcome_node.response,
-            regime=(outcome_exposure, mediator_exposure),
-            details=dict(exc.details),
-        ) from exc
-    if outcome_mean.size == 0:
-        raise _error(
-            "empty_standardization",
-            AnalysisStatus.FIT_FAILED,
-            "standardization produced no outcome cells",
-            regime=(outcome_exposure, mediator_exposure),
-        )
-    return float(np.asarray(outcome_mean, dtype=float).sum()), int(outcome_mean.size)
 
 
 def _find_exposure_name(plan: AnalysisPlan) -> str:
@@ -666,22 +658,38 @@ def _standardize_regime_with_block(
     draws: CommonDraws,
     block_size: int,
 ) -> float:
-    retained = _retained_frame(data, plan)
     total = 0.0
     count = 0
-    for start in range(0, len(retained), block_size):
-        block = retained.iloc[start : start + block_size].copy(deep=True)
-        block_total, block_count = _standardize_block(
-            block,
-            plan,
-            fitted,
-            outcome_exposure=outcome_exposure,
-            mediator_exposure=mediator_exposure,
-            moderator_values=moderator_values,
-            draws=draws,
-        )
-        total += block_total
-        count += block_count
+    for outcome_frame in _iter_standardized_blocks(
+        data,
+        plan,
+        fitted,
+        outcome_exposure=outcome_exposure,
+        mediator_exposure=mediator_exposure,
+        moderator_values=moderator_values,
+        draws=draws,
+        block_size=block_size,
+    ):
+        try:
+            outcome_mean = fitted.outcome_node.predict_mean(outcome_frame)
+        except NodeFitError as exc:
+            raise _error(
+                exc.code,
+                AnalysisStatus.FIT_FAILED,
+                str(exc),
+                node=fitted.outcome_node.response,
+                regime=(outcome_exposure, mediator_exposure),
+                details=dict(exc.details),
+            ) from exc
+        if outcome_mean.size == 0:
+            raise _error(
+                "empty_standardization",
+                AnalysisStatus.FIT_FAILED,
+                "standardization produced no outcome cells",
+                regime=(outcome_exposure, mediator_exposure),
+            )
+        total += float(np.asarray(outcome_mean, dtype=float).sum())
+        count += int(outcome_mean.size)
     if count == 0:
         raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
     return total / count
