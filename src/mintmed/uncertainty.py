@@ -40,6 +40,48 @@ def _stream_seeds(base_seed: int, replicate: int) -> tuple[int, int]:
     return row_seed, integration_seed
 
 
+def _resample_frame(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    row_positions: tuple[int, ...],
+) -> tuple[pd.DataFrame, tuple[Any, ...]]:
+    """Return a fresh local-index bootstrap frame and its source labels."""
+
+    source = data.loc[list(plan.retained_row_indices), list(plan.analysis_columns)]
+    row_indices = tuple(source.index[position] for position in row_positions)
+    replicate_frame = source.iloc[list(row_positions)].copy(deep=True)
+    replicate_frame.index = pd.RangeIndex(len(row_positions))
+    return replicate_frame, row_indices
+
+
+def _relabeled_plan(
+    plan: AnalysisPlan,
+    row_count: int,
+    *,
+    replicate: int,
+    row_seed: int,
+    integration_seed: int,
+) -> AnalysisPlan:
+    """Relabel a compiled plan for duplicated local bootstrap rows."""
+
+    diagnostics = dict(plan.diagnostics)
+    diagnostics.update(
+        {
+            "bootstrap_replicate": int(replicate),
+            "bootstrap_row_seed": int(row_seed),
+            "bootstrap_integration_seed": int(integration_seed),
+        }
+    )
+    return replace(
+        plan,
+        retained_row_indices=tuple(range(row_count)),
+        excluded_row_indices=(),
+        original_row_count=row_count,
+        retained_row_count=row_count,
+        diagnostics=diagnostics,
+    )
+
+
 def _replicate_identity(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -47,8 +89,7 @@ def _replicate_identity(
 ) -> tuple[dict[str, Any], pd.DataFrame, AnalysisPlan]:
     """Create reproducible participant rows and the private relabeled plan."""
 
-    source = data.loc[list(plan.retained_row_indices), list(plan.analysis_columns)]
-    n_rows = len(source)
+    n_rows = len(plan.retained_row_indices)
     if n_rows == 0:
         raise GFormulaError(
             code="empty_analysis",
@@ -58,24 +99,13 @@ def _replicate_identity(
     row_seed, integration_seed = _stream_seeds(plan.computation.seed, replicate)
     positions = np.random.default_rng(row_seed).integers(0, n_rows, size=n_rows)
     row_positions = tuple(int(position) for position in positions)
-    row_indices = tuple(source.index[position] for position in row_positions)
-    replicate_frame = source.iloc[list(row_positions)].copy(deep=True)
-    replicate_frame.index = pd.RangeIndex(n_rows)
-    diagnostics = dict(plan.diagnostics)
-    diagnostics.update(
-        {
-            "bootstrap_replicate": int(replicate),
-            "bootstrap_row_seed": row_seed,
-            "bootstrap_integration_seed": integration_seed,
-        }
-    )
-    replicate_plan = replace(
+    replicate_frame, row_indices = _resample_frame(data, plan, row_positions)
+    replicate_plan = _relabeled_plan(
         plan,
-        retained_row_indices=tuple(range(n_rows)),
-        excluded_row_indices=(),
-        original_row_count=n_rows,
-        retained_row_count=n_rows,
-        diagnostics=diagnostics,
+        n_rows,
+        replicate=replicate,
+        row_seed=row_seed,
+        integration_seed=integration_seed,
     )
     identity = {
         "replicate": int(replicate),
