@@ -1,0 +1,74 @@
+schema_version: 1
+exposure:
+  name: A
+  type: binary
+  levels: [0, 1]
+  reference: 0
+  comparison: 1
+outcome:
+  name: Y
+  type: continuous
+  family: gaussian
+mediators:
+  - name: M1
+    type: continuous
+    family: gaussian
+  - name: M2
+    type: continuous
+    family: gaussian
+arrangement: sequential
+mediator_order: [M1, M2]
+baseline:
+  - {name: C, type: continuous}
+moderators:
+  - {name: W, type: binary, levels: [0, 1]}
+scientific_edges:
+  - [A, M1]
+  - [A, M2]
+  - [M1, M2]
+  - [A, Y]
+  - [M1, Y]
+  - [M2, Y]
+models:
+  M1:
+    intercept: true
+    terms:
+      - {variable: A, basis: categorical}
+      - {variable: W, basis: categorical}
+      - {variable: C, basis: linear}
+    interactions:
+      - {left: W, right: A}
+  M2:
+    intercept: true
+    terms:
+      - {variable: A, basis: categorical}
+      - {variable: M1, basis: linear}
+      - {variable: C, basis: linear}
+    interactions: []
+  Y:
+    intercept: true
+    terms:
+      - {variable: A, basis: categorical}
+      - {variable: W, basis: categorical}
+      - {variable: C, basis: linear}
+      - {variable: M1, basis: linear}
+      - {variable: M2, basis: linear}
+    interactions:
+      - {left: W, right: M1}
+      - {left: W, right: M2}
+contrast:
+  reference: 0
+  comparison: 1
+  moderator_values:
+    W: 0
+interpretation: model_standardized
+missing: error
+computation:
+  seed: 20260921
+  bootstrap: 2
+  bootstrap_mode: quick_diagnostic
+  integration_draws: 256
+  integration_tolerance: 1.0
+  max_seconds: 30
+  memory_budget_mb: 256
+  information: false

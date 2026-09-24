@@ -1,0 +1,57 @@
+schema_version: 1
+exposure:
+  name: A
+  type: continuous
+  reference: 0.0
+  comparison: 1.0
+outcome:
+  name: Y
+  type: continuous
+  family: gaussian
+mediators:
+  - name: M1
+    type: continuous
+    family: gaussian
+  - name: M2
+    type: continuous
+    family: gaussian
+arrangement: parallel
+mediator_order: [M1, M2]
+baseline: []
+moderators: []
+scientific_edges:
+  - [A, M1]
+  - [A, M2]
+  - [A, Y]
+  - [M1, Y]
+  - [M2, Y]
+models:
+  M1:
+    intercept: true
+    terms:
+      - {variable: A, basis: linear}
+    interactions: []
+  M2:
+    intercept: true
+    terms:
+      - {variable: A, basis: linear}
+    interactions: []
+  Y:
+    intercept: true
+    terms:
+      - {variable: A, basis: linear}
+      - {variable: M1, basis: natural_spline, df: 3}
+      - {variable: M2, basis: linear}
+    interactions:
+      - {left: M1, right: M2}
+interpretation: model_standardized
+missing: error
+computation:
+  seed: 20260920
+  bootstrap: 2
+  bootstrap_mode: quick_diagnostic
+  integration_draws: 256
+  integration_tolerance: 1.0
+  max_seconds: 30
+  memory_budget_mb: 256
+  information: false

@@ -1,0 +1,46 @@
+schema_version: 1
+exposure:
+  name: A
+  type: binary
+  levels: [0, 1]
+  reference: 0
+  comparison: 1
+outcome:
+  name: Y
+  type: continuous
+  family: gaussian
+mediators:
+  - name: M
+    type: continuous
+    family: gaussian
+arrangement: parallel
+mediator_order: [M]
+baseline: []
+moderators: []
+scientific_edges:
+  - [A, M]
+  - [A, Y]
+  - [M, Y]
+models:
+  M:
+    intercept: true
+    terms:
+      - {variable: A, basis: categorical}
+    interactions: []
+  Y:
+    intercept: true
+    terms:
+      - {variable: A, basis: categorical}
+      - {variable: M, basis: linear}
+    interactions: []
+interpretation: model_standardized
+missing: error
+computation:
+  seed: 20260919
+  bootstrap: 2
+  bootstrap_mode: quick_diagnostic
+  integration_draws: 256
+  integration_tolerance: 1.0
+  max_seconds: 30
+  memory_budget_mb: 256
+  information: false
