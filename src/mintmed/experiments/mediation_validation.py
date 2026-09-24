@@ -8,38 +8,37 @@ can inspect a design without importing or fitting a model.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 import csv
 import hashlib
 import json
 import math
 import os
 import platform
-from pathlib import Path
 import time
-from typing import Any, Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.special import expit
 import yaml
+from scipy.special import expit
 
-from mintmed.simulation.mediation import SimulationFixture
-from mintmed.spec import (
+from ..simulation.mediation import SimulationFixture
+from ..spec import (
     ComputationSpec,
     ContrastSpec,
     Family,
     InteractionSpec,
     NodeSpec,
     Role,
+    TemplateSpec,
     TermKind,
     TermSpec,
-    TemplateSpec,
     VariableSpec,
     compile_template,
 )
-
 
 COMBINATION_COLUMNS: tuple[str, str] = ("cell_id", "replicate")
 RAW_COLUMNS: tuple[str, ...] = (
@@ -176,7 +175,7 @@ class ValidationConfig:
 
 def _require_mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
-        raise ValueError(f"{label} must be a mapping")
+        raise ValueError(f"{label} must be a mapping")  # noqa: TRY004
     return value
 
 
@@ -190,7 +189,7 @@ def _required_int(raw: Mapping[str, Any], key: str, *, minimum: int) -> int:
 def _required_float(raw: Mapping[str, Any], key: str, *, minimum: float) -> float:
     value = raw.get(key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{key} must be a finite number >= {minimum}")
+        raise ValueError(f"{key} must be a finite number >= {minimum}")  # noqa: TRY004
     result = float(value)
     if not math.isfinite(result) or result < minimum:
         raise ValueError(f"{key} must be a finite number >= {minimum}")
@@ -224,6 +223,8 @@ def load_config(path: Path) -> ValidationConfig:
     if integration_draws not in _DRAW_BUDGETS:
         raise ValueError(f"integration_draws must be one of {sorted(_DRAW_BUDGETS)}")
     integration_tolerance = _required_float(raw, "integration_tolerance", minimum=0.0)
+    if integration_tolerance <= 0.0:
+        raise ValueError("integration_tolerance must be positive")
     max_seconds = _required_int(raw, "max_seconds", minimum=1)
     memory_budget_mb = _required_int(raw, "memory_budget_mb", minimum=1)
 
@@ -245,12 +246,12 @@ def load_config(path: Path) -> ValidationConfig:
         raise ValueError(f"unknown stress key(s): {', '.join(sorted(stress_unknown))}")
     stress_enabled = stress.get("enabled")
     if not isinstance(stress_enabled, bool):
-        raise ValueError("stress.enabled must be boolean")
+        raise ValueError("stress.enabled must be boolean")  # noqa: TRY004
     stress_replicates = _required_int(stress, "replicates", minimum=0)
     stress_sample_size = _required_int(stress, "sample_size", minimum=2)
     fixture_values = stress.get("fixture_names")
     if not isinstance(fixture_values, (list, tuple)):
-        raise ValueError("stress.fixture_names must be a sequence")
+        raise ValueError("stress.fixture_names must be a sequence")  # noqa: TRY004
     stress_fixture_names = tuple(fixture_values)
     if any(not isinstance(value, str) for value in stress_fixture_names):
         raise ValueError("stress.fixture_names must contain strings")
@@ -268,6 +269,10 @@ def load_config(path: Path) -> ValidationConfig:
         (key, _required_float(gates, key, minimum=0.0))
         for key in sorted(_GATE_KEYS)
     )
+    gate_map = dict(gate_values)
+    for key in ("coverage_wilson_lower", "null_false_zero_wilson_upper", "unavailable_or_fatal_max"):
+        if gate_map[key] > 1.0:
+            raise ValueError(f"{key} must be between 0 and 1")
     return ValidationConfig(
         schema_version=schema_version,
         experiment=experiment,
@@ -533,6 +538,9 @@ def _single_spec(*, outcome_kind: Family, outcome_type: str = "continuous", outc
     outcome_names = ["A", "C"]
     if m_to_y:
         outcome_names.append("M")
+    outcome_terms = _terms(outcome_names)
+    if outcome_term_kind is not TermKind.LINEAR:
+        outcome_terms = _terms(outcome_names[:-1]) + _terms(("M",), outcome_term_kind)
     edges = [("A", "Y")]
     if a_to_m:
         edges.insert(0, ("A", "M"))
@@ -544,7 +552,12 @@ def _single_spec(*, outcome_kind: Family, outcome_type: str = "continuous", outc
         baseline=baseline,
         nodes=(
             _node("M", Family.GAUSSIAN, mediator_names),
-            _node("Y", outcome_kind, outcome_names, kind=outcome_term_kind),
+            NodeSpec(
+                response="Y",
+                family=outcome_kind,
+                intercept=True,
+                terms=outcome_terms,
+            ),
         ),
         edges=edges,
         order=("M",),
@@ -591,10 +604,9 @@ def _generate_single(rng: np.random.Generator, cell: ValidationCell) -> Simulati
         y = 0.2 * a + 0.5 * m + 0.3 * c + e_y
     if cell.generator_name == "no_mediation":
         m = 0.3 * c + e_m
-    kind = TermKind.NATURAL_SPLINE if cell.generator_name == "spline" else TermKind.LINEAR
     spec = _single_spec(
         outcome_kind=Family.GAUSSIAN,
-        outcome_term_kind=kind if cell.generator_name == "spline" else (
+        outcome_term_kind=TermKind.NATURAL_SPLINE if cell.generator_name == "spline" else (
             TermKind.QUADRATIC if cell.generator_name == "quadratic" else TermKind.LINEAR
         ),
         a_to_m=cell.generator_name != "no_a_to_m",
@@ -852,14 +864,18 @@ def extract_metrics(payload: Mapping[str, Any], cell_id: str) -> dict[str, dict[
         right = direct[1].get("estimate")
         if left is not None and right is not None:
             difference_point = {"estimate": float(right) - float(left), "status": overall_status}
+    direct_points = {
+        value: {key: item for key, item in effect.items() if key not in {"lower", "upper"}}
+        for value, effect in direct.items()
+    }
     return {
         "TNIE_W0": _metric_from_effect(
-            truth["TNIE_W0"], direct.get(0), None, status=overall_status,
-            reason=(direct.get(0) or {}).get("reason") if direct.get(0) else failure_reason,
+            truth["TNIE_W0"], direct_points.get(0), None, status=overall_status,
+            reason=(direct_points.get(0) or {}).get("reason") if direct_points.get(0) else failure_reason,
         ),
         "TNIE_W1": _metric_from_effect(
-            truth["TNIE_W1"], direct.get(1), None, status=overall_status,
-            reason=(direct.get(1) or {}).get("reason") if direct.get(1) else failure_reason,
+            truth["TNIE_W1"], direct_points.get(1), None, status=overall_status,
+            reason=(direct_points.get(1) or {}).get("reason") if direct_points.get(1) else failure_reason,
         ),
         "TNIE_difference": _metric_from_effect(
             truth["TNIE_difference"],
@@ -923,7 +939,6 @@ def row_from_payload(
         "accepted_draw_budget": draw_budget,
     }
     return {
-        "cell_id": cell.cell_id,
         "replicate": int(replicate),
         "data_seed": int(data_seed),
         "analysis_seed": int(analysis_seed),
@@ -1006,7 +1021,8 @@ def _read_resume_rows(path: Path, config: ValidationConfig) -> pd.DataFrame:
     if raw.duplicated(subset=list(COMBINATION_COLUMNS)).any():
         raise ValueError("raw_metrics.csv contains duplicate combination keys")
     allowed = expected_combinations(config)
-    observed = set(raw[list(COMBINATION_COLUMNS)].itertuples(index=False, name=None))
+    current = raw.loc[raw["config_hash"].astype(str) == config.config_hash]
+    observed = set(current[list(COMBINATION_COLUMNS)].itertuples(index=False, name=None))
     unexpected = observed - allowed
     if unexpected:
         raise ValueError(f"raw_metrics.csv contains combinations outside the loaded design: {sorted(unexpected)}")
@@ -1231,6 +1247,6 @@ __all__ = [
     "metric_record",
     "row_from_payload",
     "run",
-    "selected_combinations",
     "seed_pair",
+    "selected_combinations",
 ]

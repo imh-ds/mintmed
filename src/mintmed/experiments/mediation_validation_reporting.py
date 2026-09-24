@@ -7,10 +7,10 @@ statistics with explicit denominators.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import json
 import math
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +19,11 @@ import pandas as pd
 
 from .mediation_validation import (
     COMBINATION_COLUMNS,
-    EVIDENCE_ARTIFACTS,
     RAW_COLUMNS,
     ValidationConfig,
     cell_definition,
     expected_combinations,
 )
-
 
 WILSON_Z = 1.959963984540054
 _DIRECT_MODERATOR_METRICS = {"TNIE_W0", "TNIE_W1"}
@@ -83,7 +81,7 @@ def expand_metrics(raw: pd.DataFrame, config: ValidationConfig) -> pd.DataFrame:
         for metric in definition.metric_names:
             record = metrics[metric]
             if not isinstance(record, Mapping):
-                raise ValueError(f"metric {metric} in {cell_id} is not a mapping")
+                raise ValueError(f"metric {metric} in {cell_id} is not a mapping")  # noqa: TRY004
             rows.append(
                 {
                     "cell_id": cell_id,
@@ -123,6 +121,7 @@ def _wilson_fields(successes: int, trials: int, prefix: str) -> dict[str, Any]:
         prefix: None if trials == 0 else float(successes / trials),
         f"{prefix}_wilson_lower": lower,
         f"{prefix}_wilson_upper": upper,
+        f"{prefix}_mc_se": None if trials == 0 else float(math.sqrt((successes / trials) * (1.0 - successes / trials) / trials)),
     }
 
 
@@ -144,10 +143,10 @@ def summarize_metrics(
         fatal = group["status"].isin(_FATAL_STATUSES) | ~finite
         unavailable = ~available
         coverage_successes = int(group["coverage"].astype(bool).sum())
-        coverage_lower, coverage_upper = wilson(coverage_successes, attempted)
         available_successes = int(group.loc[available, "coverage"].astype(bool).sum())
         available_trials = int(available.sum())
         available_lower, available_upper = wilson(available_successes, available_trials)
+        draw_values = pd.to_numeric(group["draw_budget"], errors="coerce").dropna()
         zero_successes = int(group["zero_exclusion"].astype(bool).sum())
         zero_lower, zero_upper = wilson(zero_successes, attempted)
         abs_bias = biases.abs().dropna()
@@ -168,15 +167,17 @@ def summarize_metrics(
                 "mean_width": _mean_or_none(group.loc[available, "width"]),
                 "zero_exclusions": zero_successes,
                 "zero_exclusion_rate": float(zero_successes / attempted) if attempted else None,
+                "zero_exclusion_mc_se": None if attempted == 0 else float(math.sqrt((zero_successes / attempted) * (1.0 - zero_successes / attempted) / attempted)),
                 "runtime_mean_seconds": _mean_or_none(group["runtime_seconds"]),
                 "fit_count_mean": _mean_or_none(group["fit_count"]),
-                "draw_budget_min": _mean_or_none(group["draw_budget"]),
-                "draw_budget_max": None if group["draw_budget"].dropna().empty else float(pd.to_numeric(group["draw_budget"], errors="coerce").max()),
+                "draw_budget_min": None if draw_values.empty else float(draw_values.min()),
+                "draw_budget_max": None if draw_values.empty else float(draw_values.max()),
                 "population_outcome_sd": definition.population_outcome_sd,
                 **_wilson_fields(coverage_successes, attempted, "coverage"),
                 "available_only_coverage": None if available_trials == 0 else float(available_successes / available_trials),
                 "available_only_coverage_wilson_lower": available_lower,
                 "available_only_coverage_wilson_upper": available_upper,
+                "available_only_coverage_mc_se": None if available_trials == 0 else float(math.sqrt((available_successes / available_trials) * (1.0 - available_successes / available_trials) / available_trials)),
                 "zero_exclusion_wilson_lower": zero_lower,
                 "zero_exclusion_wilson_upper": zero_upper,
                 "unavailable_interval_rate": float(unavailable.sum() / attempted) if attempted else None,
@@ -354,8 +355,8 @@ def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) 
     summary_payload = {
         "schema_version": 1,
         "config_hash": config.config_hash,
-        "expected_rows": int(len(expected_combinations(config))),
-        "observed_rows": int(len(raw)),
+        "expected_rows": len(expected_combinations(config)),
+        "observed_rows": len(raw),
         "complete_grid": bool(gate_result["complete_grid"]),
         "combination_columns": list(COMBINATION_COLUMNS),
         "cell_summaries": _json_safe(summary.to_dict(orient="records")),

@@ -3,15 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import yaml
-import pandas as pd
 
 from mintmed.experiments.mediation_validation import (
     COMBINATION_COLUMNS,
     EVIDENCE_ARTIFACTS,
     RAW_COLUMNS,
-    ValidationConfig,
     cell_definition,
     cell_truth,
     expected_combinations,
@@ -20,8 +19,8 @@ from mintmed.experiments.mediation_validation import (
     generate_cell,
     load_config,
     metric_record,
-    selected_combinations,
     seed_pair,
+    selected_combinations,
 )
 from mintmed.experiments.mediation_validation_reporting import (
     expand_metrics,
@@ -29,7 +28,6 @@ from mintmed.experiments.mediation_validation_reporting import (
     wilson,
     write_report,
 )
-
 
 ROOT = Path(__file__).parents[2]
 SMOKE = ROOT / "configs" / "mediation_validation_smoke.yaml"
@@ -119,6 +117,22 @@ def test_config_rejects_nonmapping_yaml(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="mapping"):
         load_config(path)
+
+
+def test_config_rejects_zero_tolerance_and_probability_gate_above_one(tmp_path: Path) -> None:
+    raw = yaml.safe_load(SMOKE.read_text(encoding="utf-8"))
+    raw["integration_tolerance"] = 0.0
+    tolerance_path = tmp_path / "zero-tolerance.yaml"
+    tolerance_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="positive"):
+        load_config(tolerance_path)
+
+    raw = yaml.safe_load(SMOKE.read_text(encoding="utf-8"))
+    raw["gates"]["coverage_wilson_lower"] = 1.1
+    gate_path = tmp_path / "bad-gate.yaml"
+    gate_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    with pytest.raises(ValueError, match="between 0 and 1"):
+        load_config(gate_path)
 
 
 def test_raw_contract_preserves_two_key_and_evidence_artifact_contract() -> None:
@@ -312,13 +326,13 @@ def test_cell_ten_payload_extracts_direct_points_and_paired_difference_interval(
                     {
                         "moderator": "W",
                         "value": 0,
-                        "effects": [{"name": "TNIE", "estimate": 0.09, "lower": None, "upper": None, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
+                        "effects": [{"name": "TNIE", "estimate": 0.09, "lower": 0.01, "upper": 0.17, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
                         "differences": [],
                     },
                     {
                         "moderator": "W",
                         "value": 1,
-                        "effects": [{"name": "TNIE", "estimate": 0.36, "lower": None, "upper": None, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
+                        "effects": [{"name": "TNIE", "estimate": 0.36, "lower": 0.28, "upper": 0.44, "status": "ok", "reason": "bootstrap_interval_not_reported_for_moderator_effect"}],
                         "differences": [],
                     },
                 ]
