@@ -45,10 +45,20 @@ class _FrozenDict(dict[str, Any]):
         return _FrozenDict(deepcopy(dict(self), memo))
 
 
+def _freeze_value(value: Any) -> Any:
+    """Recursively freeze result-owned mappings and sequences."""
+
+    if isinstance(value, Mapping):
+        return _FrozenDict({key: _freeze_value(item) for key, item in value.items()})
+    if isinstance(value, (tuple, list)):
+        return tuple(_freeze_value(item) for item in value)
+    return value
+
+
 def _freeze_mapping(value: Mapping[str, Any] | None) -> Mapping[str, Any]:
     """Copy a mapping into a read-only container for frozen result objects."""
 
-    return _FrozenDict(value)
+    return _FrozenDict({key: _freeze_value(item) for key, item in (value or {}).items()})
 
 
 def _freeze_records(

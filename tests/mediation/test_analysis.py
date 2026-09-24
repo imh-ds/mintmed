@@ -183,7 +183,7 @@ def test_moderated_analysis_preserves_declared_standardized_contrasts() -> None:
     result = mintmed.analyze_mediation(data, spec)
 
     assert result.diagnostics["moderation"]["requested"] is True
-    assert result.diagnostics["moderation"]["requested_values"] == {"W": [0.0, 1.0]}
+    assert result.diagnostics["moderation"]["requested_values"] == {"W": (0, 1)}
     assert result.diagnostics["moderation"]["status"] == "ok"
     assert tuple(
         (contrast["moderator"], contrast["value"])
@@ -223,10 +223,150 @@ def test_four_mediator_analysis_records_factorization_and_budget() -> None:
 
     result = mintmed.analyze_mediation(data, spec)
 
-    assert result.diagnostics["scientific"]["factorization_order"] == ["M1", "M2", "M3", "M4"]
+    assert result.diagnostics["scientific"]["factorization_order"] == ("M1", "M2", "M3", "M4")
     assert result.diagnostics["integration"]["accepted_draw_budget"] >= 0
     assert result.diagnostics["integration"]["method"] in {
         "sobol_blocked",
         "exact_binary_mediators",
         "gaussian_linear_exact",
     }
+
+
+def test_invalid_data_returns_typed_result_without_fitting() -> None:
+    data, spec = _fixture(n=120)
+
+    result = mintmed.analyze_mediation(data.drop(columns=["Y"]), spec)
+
+    assert result.status is AnalysisStatus.UNSUPPORTED
+    assert result.diagnostics["overall_status"] == "invalid_data"
+    assert result.diagnostics["error"]["code"] == "missing_columns"
+    assert result.diagnostics["error"]["path"] == "data.columns"
+    assert result.effects == ()
+    assert result.bootstrap is None
+
+
+def test_invalid_specification_returns_canonical_hash_and_location() -> None:
+    data, spec = _fixture(n=120)
+    invalid = replace(spec, missing="invalid_policy")
+
+    result = mintmed.analyze_mediation(data, invalid)
+
+    assert result.status is AnalysisStatus.UNSUPPORTED
+    assert result.diagnostics["overall_status"] == "invalid_specification"
+    assert result.diagnostics["error"]["code"] == "invalid_plan_spec"
+    assert result.diagnostics["error"]["path"] == "missing"
+    assert result.specification_hash
+    assert result.analysis_hash == ""
+
+
+def test_fit_failure_preserves_typed_stage_and_skips_bootstrap(monkeypatch) -> None:
+    import mintmed.api as api
+    from mintmed.gformula import GFormulaError
+
+    data, spec = _fixture(n=120, bootstrap=2)
+
+    def fail_fit(_data, _plan):
+        raise GFormulaError(
+            code="rank_deficient",
+            status=AnalysisStatus.FIT_FAILED,
+            message="test fit failure",
+            node="M",
+        )
+
+    monkeypatch.setattr(api, "fit_system", fail_fit)
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.status is AnalysisStatus.FIT_FAILED
+    assert result.diagnostics["overall_status"] == "fit_failed"
+    assert result.diagnostics["stage"] == "fit"
+    assert result.diagnostics["error"]["code"] == "rank_deficient"
+    assert result.diagnostics["error"]["node"] == "M"
+    assert result.bootstrap is None
+    assert result.effects == ()
+
+
+def test_unresolved_integration_preserves_fitted_diagnostics_without_effects(monkeypatch) -> None:
+    import mintmed.api as api
+    from dataclasses import replace as dataclass_replace
+    from mintmed.gformula import fit_system
+    from mintmed.types import Issue
+    from mintmed.spec import estimate_plan
+
+    data, spec = _fixture("four_mediator_mixed", n=100)
+    real_plan = estimate_plan(data, spec)
+    real_fitted = fit_system(data, real_plan)
+    unresolved = dataclass_replace(
+        real_fitted,
+        status=AnalysisStatus.INTEGRATION_FAILED,
+        issues=(
+            Issue(
+                code="integration_unresolved",
+                message="test integration failure",
+                status=AnalysisStatus.INTEGRATION_FAILED,
+                path="integration",
+            ),
+        ),
+    )
+
+    monkeypatch.setattr(api, "fit_system", lambda _data, _plan: unresolved)
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.status is AnalysisStatus.INTEGRATION_FAILED
+    assert result.diagnostics["overall_status"] == "integration_unresolved"
+    assert result.diagnostics["stage"] == "integration"
+    assert result.diagnostics["integration"]["status"] == "integration_failed"
+    assert result.diagnostics["integration"]["issues"][0]["code"] == "integration_unresolved"
+    assert result.effects == ()
+    assert result.bootstrap is None
+
+
+def test_incomplete_bootstrap_retains_point_effects_and_failure_counts(monkeypatch) -> None:
+    import mintmed.uncertainty as uncertainty
+
+    data, spec = _fixture(n=120, bootstrap=3)
+
+    def interrupt(_data, _plan, _point, _replicate):
+        raise TimeoutError("test timeout")
+
+    monkeypatch.setattr(uncertainty, "_run_replicate", interrupt)
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.effects
+    assert result.bootstrap is not None
+    assert result.bootstrap.status is AnalysisStatus.INCOMPLETE
+    assert result.bootstrap.failure_counts["bootstrap_interrupted"] == 1
+    assert result.diagnostics["overall_status"] == "incomplete"
+    assert result.diagnostics["bootstrap"]["status"] == "incomplete"
+
+
+def test_unexpected_programmer_errors_propagate(monkeypatch) -> None:
+    import mintmed.api as api
+
+    data, spec = _fixture(n=120)
+    monkeypatch.setattr(api, "estimate_plan", lambda _data, _spec: (_ for _ in ()).throw(RuntimeError("bug")))
+
+    with pytest.raises(RuntimeError, match="bug"):
+        mintmed.analyze_mediation(data, spec)
+
+
+def test_nested_result_mappings_are_immutable() -> None:
+    data, spec = _fixture(n=120)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    with pytest.raises(TypeError):
+        result.diagnostics["rows"]["retained"] = 0
+
+
+def test_unsupported_declared_moderator_level_is_visible_as_warning() -> None:
+    data, spec = _fixture("moderated_serial", n=120)
+    moderator = replace(spec.moderators[0], levels=(0, 1, 2))
+    spec = replace(spec, moderators=(moderator,))
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.effects
+    assert result.diagnostics["overall_status"] == "complete_with_warnings"
+    assert result.diagnostics["moderation"]["status"] == "unsupported"
+    assert result.diagnostics["moderation"]["reason"]
+    assert any(item["code"] == "unsupported_extrapolation" for item in result.diagnostics["warnings"])
