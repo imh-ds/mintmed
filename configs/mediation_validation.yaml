@@ -1,0 +1,38 @@
+schema_version: 1
+experiment: mintmed_baseline_validation
+master_seed: 20260919
+replicates: 200
+bootstrap_replicates: 399
+bootstrap_mode: standard
+integration_draws: 256
+integration_tolerance: 1.0e-8
+max_seconds: 600
+memory_budget_mb: 1024
+cell_ids:
+  - cell01_linear_n100
+  - cell02_linear_n250
+  - cell03_no_a_to_m_n100
+  - cell04_no_m_to_y_n100
+  - cell05_no_mediation_n100
+  - cell06_parallel_interaction_n150
+  - cell07_serial_three_n200
+  - cell08_quadratic_n100
+  - cell09_spline_n250
+  - cell10_moderated_n150
+  - cell11_binary_mediator_n150
+  - cell12_mixed_binary_serial_n250
+stress:
+  enabled: true
+  replicates: 1
+  sample_size: 50
+  fixture_names:
+    - tied_score
+    - sparse_events
+    - missingness
+    - opposing_paths
+gates:
+  continuous_abs_bias_sd: 0.05
+  binary_abs_bias_probability: 0.02
+  coverage_wilson_lower: 0.90
+  null_false_zero_wilson_upper: 0.10
+  unavailable_or_fatal_max: 0.01
