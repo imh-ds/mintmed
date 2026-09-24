@@ -265,3 +265,27 @@ def test_node_order_and_node_fit_failures_keep_typed_context():
         fit_system(fixture.data, broken)
     assert fit_error.value.node == "M1"
     assert fit_error.value.status is AnalysisStatus.FIT_FAILED
+
+
+def test_fixed_budget_fit_bypasses_adaptive_integration_selection(monkeypatch):
+    import mintmed.gformula as gformula
+
+    fixture, plan = _fixture("serial_two", 80)
+
+    def fail_if_selected(*_args, **_kwargs):
+        raise AssertionError("bootstrap fixed-budget fitting must not adapt")
+
+    monkeypatch.setattr(gformula, "_select_integration", fail_if_selected)
+    fitted = gformula._fit_system_with_fixed_budget(
+        fixture.data,
+        plan,
+        draw_seed=9182,
+        draw_budget=64,
+    )
+
+    assert fitted.status is AnalysisStatus.OK
+    assert fitted.integration_method == "sobol_blocked"
+    assert fitted.draw_budget == 64
+    assert fitted.draws is not None
+    assert fitted.draws.seed == 9182
+    assert fitted.draws.draw_count == 64
