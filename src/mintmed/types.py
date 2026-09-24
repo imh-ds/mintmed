@@ -67,6 +67,7 @@ class Issue:
     message: str
     status: AnalysisStatus
     node: str | None = None
+    path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
