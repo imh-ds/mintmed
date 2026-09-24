@@ -407,6 +407,78 @@ def _sobol_system(
     )
 
 
+def _fit_system_with_fixed_budget(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    *,
+    draw_seed: int,
+    draw_budget: int,
+) -> FittedSystem:
+    """Fit a fresh system without adaptive integration selection.
+
+    The point-analysis path intentionally retains :func:`fit_system`'s
+    tolerance-driven budget selection.  Participant bootstrap replicates
+    need a different contract: they must use the point budget exactly so
+    replicate failures and estimates are attributable to the resampled data,
+    not to a second integration-selection procedure.
+    """
+
+    if isinstance(draw_budget, bool) or not isinstance(draw_budget, (int, np.integer)):
+        raise _error(
+            "invalid_draw_budget",
+            AnalysisStatus.INTEGRATION_FAILED,
+            "draw_budget must be a positive integer",
+        )
+    if int(draw_budget) < 0:
+        raise _error(
+            "invalid_draw_budget",
+            AnalysisStatus.INTEGRATION_FAILED,
+            "draw_budget must be a nonnegative integer",
+        )
+
+    _validate_node_order(plan)
+    retained = _retained_frame(data, plan)
+    fitted: list[FittedNode] = []
+    for node_plan in plan.nodes:
+        try:
+            fitted.append(fit_node(retained, node_plan))
+        except NodeFitError as exc:
+            raise _node_fit_error(exc) from exc
+    nodes = tuple(fitted)
+    correlation = _residual_correlation(retained, plan, nodes)
+    mediator_count = len(_mediator_order(plan))
+    if all(node.family is Family.BERNOULLI for node in nodes[:-1]) and mediator_count <= 4:
+        return _make_system(
+            plan,
+            nodes,
+            draws=None,
+            draw_budget=0,
+            method="exact_binary_mediators",
+            correlation=correlation,
+        )
+    if _is_gaussian_linear(plan):
+        return _make_system(
+            plan,
+            nodes,
+            draws=None,
+            draw_budget=0,
+            method="gaussian_linear_exact",
+            correlation=correlation,
+        )
+    if int(draw_budget) == 0:
+        raise _error(
+            "invalid_draw_budget",
+            AnalysisStatus.INTEGRATION_FAILED,
+            "draw_budget must be positive for Sobol integration",
+        )
+    draws = CommonDraws.from_seed(
+        seed=int(draw_seed),
+        draw_count=int(draw_budget),
+        mediator_count=mediator_count,
+    )
+    return _sobol_system(plan, nodes, correlation, draws)
+
+
 def _primary_means(data: pd.DataFrame, system: FittedSystem, draws: CommonDraws) -> RegimeMeans:
     return _compute_means_with_system(data, system, draws)
 

@@ -61,12 +61,18 @@ def test_bootstrap_refits_exact_system_and_repeats_scientific_records():
     first = bootstrap_analysis(fixture.data, plan, point)
     second = bootstrap_analysis(fixture.data, plan, point)
 
-    assert first.status is AnalysisStatus.WARNING
+    assert first.status is AnalysisStatus.OK
     assert first.requested == 4
     assert first.attempted == 4
     assert first.successful == 4
     assert first.failed == 0
-    assert first.replicates == second.replicates
+    assert [
+        {key: value for key, value in record.items() if key != "runtime_seconds"}
+        for record in first.replicates
+    ] == [
+        {key: value for key, value in record.items() if key != "runtime_seconds"}
+        for record in second.replicates
+    ]
     assert first.intervals == second.intervals
     assert all(record["status"] == "ok" for record in first.replicates)
     assert all(record["row_seed"] != record["integration_seed"] for record in first.replicates)
