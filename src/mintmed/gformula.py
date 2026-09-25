@@ -314,7 +314,12 @@ def _residual_correlation(retained: pd.DataFrame, plan: AnalysisPlan, nodes: Seq
 
 def _is_gaussian_linear(plan: AnalysisPlan) -> bool:
     mediator_names = _mediator_order(plan)
-    if not mediator_names or len(plan.nodes) != len(mediator_names) + 1:
+    if (
+        not mediator_names
+        or len(mediator_names) < 3
+        or plan.diagnostics.get("arrangement") != "sequential"
+        or len(plan.nodes) != len(mediator_names) + 1
+    ):
         return False
     if any(node.family is not Family.GAUSSIAN for node in plan.nodes):
         return False
