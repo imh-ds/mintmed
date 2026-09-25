@@ -202,9 +202,11 @@ def test_exact_binary_path_returns_probability_means_and_ignores_draw_sequence()
 
 def test_one_gaussian_mediator_profiles_use_deterministic_hermite_quadrature():
     from mintmed.gformula import compute_regime_means, fit_system
+    from mintmed.experiments.mediation_validation import generate_cell
 
-    for name in ("spline", "mixed_binary_serial"):
-        fixture, plan = _fixture(name, n=120)
+    for name in ("cell09_spline_n250", "cell12_mixed_binary_serial_n250"):
+        fixture = generate_cell(name, 20260920)
+        plan = estimate_plan(fixture.data, fixture.spec)
         fitted = fit_system(fixture.data, plan)
 
         assert fitted.integration_method == "gauss_hermite"
