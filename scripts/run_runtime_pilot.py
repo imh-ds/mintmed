@@ -299,7 +299,7 @@ def _worker_record(
             draw_budget=int(draw_budget or 0),
             integration_method=str(method),
             status=status,
-            config_hash=config.config_hash,
+            config_hash=pilot_config.config_hash,
             git_commit=_git_commit(),
         )
         record = {
@@ -331,7 +331,7 @@ def _worker_record(
             draw_budget=0,
             integration_method="unavailable",
             status="blocked",
-            config_hash=config.config_hash,
+            config_hash=pilot_config.config_hash,
             git_commit=_git_commit(),
         )
         record = {
