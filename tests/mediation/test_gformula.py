@@ -298,6 +298,19 @@ def test_gaussian_linear_anchor_is_exact_and_deterministic():
     assert np.isfinite([first.mu_00, first.mu_10, first.mu_11]).all()
 
 
+def test_all_gaussian_linear_serial_system_uses_exact_regime_means():
+    from mintmed.experiments.mediation_validation import generate_cell
+    from mintmed.gformula import compute_regime_means, fit_system
+
+    fixture = generate_cell("cell07_serial_three_n200", 20260920)
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+
+    assert fitted.integration_method == "gaussian_linear_exact"
+    means = compute_regime_means(fixture.data, plan, fitted)
+    assert np.isfinite([means.mu_00, means.mu_10, means.mu_11]).all()
+
+
 def test_four_mediator_system_preserves_order_and_finite_regimes():
     fixture, plan, fitted = _fit("four_mediator_mixed", 60, tolerance=1.0)
     from mintmed.gformula import compute_regime_means
