@@ -397,11 +397,51 @@ def _check_frozen_categories(design: FrozenDesign, data: pd.DataFrame) -> None:
                 )
 
 
+def _fast_linear_transform(
+    design: FrozenDesign,
+    data: pd.DataFrame,
+) -> pd.DataFrame | None:
+    """Transform a frozen all-linear design without rebuilding Patsy matrices.
+
+    A design containing only quoted linear main effects has no fit-time state
+    beyond its column order and intercept.  Reconstructing that matrix
+    directly avoids repeatedly asking Patsy to evaluate the same expression
+    during large Monte Carlo or bootstrap workloads.  Return ``None`` for any
+    design whose metadata is not sufficient to prove that this shortcut is
+    exact; the caller then uses the general frozen ``DesignInfo`` path.
+    """
+
+    if design.interactions or design.category_levels:
+        return None
+    if any(term.kind is not TermKind.LINEAR for term in design.term_metadata):
+        return None
+
+    expected_columns = tuple(
+        (["Intercept"] if design.columns and design.columns[0] == "Intercept" else [])
+        + [term.expression for term in design.term_metadata]
+    )
+    if design.columns != expected_columns:
+        return None
+
+    values: list[np.ndarray] = []
+    if design.columns and design.columns[0] == "Intercept":
+        values.append(np.ones(len(data), dtype=float))
+    try:
+        values.extend(
+            data[term.variable].to_numpy(dtype=float, copy=False)
+            for term in design.term_metadata
+        )
+        matrix = np.column_stack(values)
+    except (TypeError, ValueError):
+        return None
+    return pd.DataFrame(matrix, columns=design.columns, index=data.index)
+
+
 def transform_design(
     design: FrozenDesign,
     data: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Transform data through the exact fit-time Patsy ``DesignInfo``."""
+    """Transform data through the exact frozen design representation."""
 
     if not isinstance(data, pd.DataFrame):
         raise _fit_error(
@@ -427,20 +467,22 @@ def transform_design(
         )
     _check_frozen_categories(design, data)
 
-    try:
-        transformed = patsy.build_design_matrices(
-            [design.design_info],
-            data,
-            return_type="dataframe",
-            NA_action="raise",
-        )[0]
-    except (patsy.PatsyError, KeyError, TypeError, ValueError) as exc:
-        raise _fit_error(
-            code="transform_failed",
-            response=design.response,
-            variable=_error_variable(str(exc), required),
-            message="Patsy could not transform the frozen design",
-        ) from exc
+    transformed = _fast_linear_transform(design, data)
+    if transformed is None:
+        try:
+            transformed = patsy.build_design_matrices(
+                [design.design_info],
+                data,
+                return_type="dataframe",
+                NA_action="raise",
+            )[0]
+        except (patsy.PatsyError, KeyError, TypeError, ValueError) as exc:
+            raise _fit_error(
+                code="transform_failed",
+                response=design.response,
+                variable=_error_variable(str(exc), required),
+                message="Patsy could not transform the frozen design",
+            ) from exc
 
     actual_columns = tuple(str(column) for column in transformed.columns)
     if actual_columns != design.columns:
