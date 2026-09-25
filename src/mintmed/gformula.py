@@ -333,6 +333,8 @@ def _supports_gauss_hermite(plan: AnalysisPlan) -> bool:
     gaussian_nodes = [node for node in mediator_nodes if node.family is Family.GAUSSIAN]
     if len(gaussian_nodes) != 1:
         return False
+    if any(node.interactions for node in plan.nodes):
+        return False
     return all(node.family in {Family.GAUSSIAN, Family.BERNOULLI} for node in mediator_nodes)
 
 
