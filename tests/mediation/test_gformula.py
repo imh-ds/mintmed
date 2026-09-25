@@ -219,6 +219,28 @@ def test_one_gaussian_mediator_profiles_use_deterministic_hermite_quadrature():
         assert np.isfinite([means.mu_00, means.mu_10, means.mu_11]).all()
 
 
+def test_hermite_profile_bootstrap_refits_remain_complete():
+    from dataclasses import replace
+
+    from mintmed.api import analyze_mediation
+    from mintmed.experiments.mediation_validation import generate_cell
+
+    fixture = generate_cell("cell12_mixed_binary_serial_n250", 20260920)
+    spec = replace(
+        fixture.spec,
+        computation=replace(fixture.spec.computation, bootstrap=2),
+    )
+
+    result = analyze_mediation(fixture.data, spec)
+
+    assert result.diagnostics["integration"]["method"] == "gauss_hermite"
+    assert result.bootstrap is not None
+    assert result.bootstrap.requested == 2
+    assert result.bootstrap.attempted == 2
+    assert result.bootstrap.successful == 2
+    assert result.bootstrap.failed == 0
+
+
 def test_gaussian_linear_anchor_is_exact_and_deterministic():
     fixture, plan, fitted = _fit("linear", 100)
     from mintmed.gformula import compute_regime_means
