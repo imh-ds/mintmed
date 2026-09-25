@@ -172,7 +172,7 @@ def test_moderated_population_truth_retains_both_fixed_moderator_regimes() -> No
 def test_binary_and_mixed_fitted_systems_select_declared_integration_paths() -> None:
     for name, method in (
         ("binary_two_mediators", "exact_binary_mediators"),
-        ("mixed_binary_serial", "sobol_blocked"),
+        ("mixed_binary_serial", "gauss_hermite"),
     ):
         fixture = sample_fixture(name, 120, np.random.default_rng(105))
         spec = replace(
@@ -187,6 +187,9 @@ def test_binary_and_mixed_fitted_systems_select_declared_integration_paths() -> 
         if method == "sobol_blocked":
             assert fitted.draw_budget in {256, 512, 1024, 2048, 4096}
             assert fitted.draw_budget >= 256
+        if method == "gauss_hermite":
+            assert fitted.draw_budget == 0
+            assert fitted.integration_diagnostics["quadrature_order"] == 64
 
 
 def test_exact_linear_and_balanced_general_simulator_agree() -> None:

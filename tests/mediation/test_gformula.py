@@ -200,6 +200,23 @@ def test_exact_binary_path_returns_probability_means_and_ignores_draw_sequence()
     assert means.total_effect == pytest.approx(means.mu_11 - means.mu_00)
 
 
+def test_one_gaussian_mediator_profiles_use_deterministic_hermite_quadrature():
+    from mintmed.gformula import compute_regime_means, fit_system
+
+    for name in ("spline", "mixed_binary_serial"):
+        fixture, plan = _fixture(name, n=120)
+        fitted = fit_system(fixture.data, plan)
+
+        assert fitted.integration_method == "gauss_hermite"
+        assert fitted.status is AnalysisStatus.OK
+        assert fitted.draws is None
+        assert fitted.draw_budget == 0
+        assert fitted.integration_diagnostics["quadrature_order"] == 64
+
+        means = compute_regime_means(fixture.data, plan, fitted)
+        assert np.isfinite([means.mu_00, means.mu_10, means.mu_11]).all()
+
+
 def test_gaussian_linear_anchor_is_exact_and_deterministic():
     fixture, plan, fitted = _fit("linear", 100)
     from mintmed.gformula import compute_regime_means

@@ -241,6 +241,7 @@ def test_four_mediator_analysis_records_factorization_and_budget() -> None:
         "sobol_blocked",
         "exact_binary_mediators",
         "gaussian_linear_exact",
+        "gauss_hermite",
     }
 
 
