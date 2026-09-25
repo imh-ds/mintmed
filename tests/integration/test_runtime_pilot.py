@@ -11,8 +11,11 @@ from scripts.run_runtime_pilot import (
     PILOT_CELL_IDS,
     PilotMeasurement,
     _json_text,
+    _pilot_config,
     _summarize_cases,
     forecast_cpu_hours,
+    DEFAULT_CONFIG,
+    load_config,
     render_markdown,
 )
 
@@ -52,6 +55,17 @@ def test_pilot_cell_set_covers_required_profiles() -> None:
         "cell09_spline_n250",
         "cell12_mixed_binary_serial_n250",
     )
+
+
+def test_pilot_config_hash_is_derived_from_one_cell_design() -> None:
+    source = load_config(DEFAULT_CONFIG)
+    pilot = _pilot_config(source, "cell01_linear_n100")
+
+    assert pilot.replicates == 1
+    assert pilot.cell_ids == ("cell01_linear_n100",)
+    assert pilot.bootstrap_replicates == source.bootstrap_replicates == 399
+    assert pilot.integration_draws == source.integration_draws == 256
+    assert pilot.config_hash != source.config_hash
 
 
 def test_pilot_measurement_rejects_negative_or_nonfinite_resources() -> None:

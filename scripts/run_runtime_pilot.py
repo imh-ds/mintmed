@@ -29,6 +29,7 @@ if str(SRC) not in sys.path:
 from mintmed import __version__ as MINTMED_VERSION  # noqa: E402
 from mintmed.api import analyze_mediation  # noqa: E402
 from mintmed.experiments.mediation_validation import (  # noqa: E402
+    ValidationConfig,
     cell_definition,
     generate_cell,
     load_config,
@@ -225,6 +226,12 @@ def _bootstrap_summary(payload: Mapping[str, Any]) -> tuple[int, int, int, Mappi
     )
 
 
+def _pilot_config(config: ValidationConfig, cell_id: str) -> ValidationConfig:
+    """Derive the one-cell/one-dataset config without changing frozen settings."""
+
+    return replace(config, replicates=1, cell_ids=(cell_id,))
+
+
 def _worker_record(
     *,
     config_path: Path,
@@ -237,6 +244,7 @@ def _worker_record(
     started_cpu = time.process_time()
     config = load_config(config_path)
     definition = cell_definition(cell_id)
+    pilot_config = _pilot_config(config, cell_id)
     data_seed, analysis_seed = seed_pair(config.master_seed, definition.ordinal, 0)
     try:
         fixture = generate_cell(cell_id, data_seed)
@@ -297,6 +305,7 @@ def _worker_record(
         record = {
             "measurement": asdict(measurement),
             "source_config_hash": config.config_hash,
+            "pilot_config_hash": pilot_config.config_hash,
             "status": status,
             "analysis_status": payload.get("overall_status"),
             "bootstrap_status": bootstrap.get("status"),
@@ -328,6 +337,7 @@ def _worker_record(
         record = {
             "measurement": asdict(measurement),
             "source_config_hash": config.config_hash,
+            "pilot_config_hash": pilot_config.config_hash,
             "status": "blocked",
             "report_serialized": False,
             "error_type": type(exc).__name__,
@@ -370,6 +380,7 @@ def _run_case(config_path: Path, cell_id: str, repeat: int, *, allow_unsupported
         if completed.returncode != 0 or not worker_output.is_file():
             definition = cell_definition(cell_id)
             config = load_config(config_path)
+            pilot_config = _pilot_config(config, cell_id)
             _git = _git_commit()
             measurement = PilotMeasurement(
                 cell_id=cell_id,
@@ -388,11 +399,13 @@ def _run_case(config_path: Path, cell_id: str, repeat: int, *, allow_unsupported
                 draw_budget=0,
                 integration_method="unavailable",
                 status="blocked",
-                config_hash=config.config_hash,
+                config_hash=pilot_config.config_hash,
                 git_commit=_git,
             )
             return {
                 "measurement": asdict(measurement),
+                "source_config_hash": config.config_hash,
+                "pilot_config_hash": pilot_config.config_hash,
                 "status": "blocked",
                 "report_serialized": False,
                 "error_type": "worker_failed",
