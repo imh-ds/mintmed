@@ -19,6 +19,7 @@ from .types import AnalysisStatus, Issue, RegimeMeans, _freeze_mapping
 
 BLOCK_SIZE = 256
 _BUDGETS = (256, 512, 1024, 2048, 4096)
+_GAUSS_HERMITE_ORDER = 64
 
 
 class GFormulaError(ValueError):
@@ -150,7 +151,12 @@ class FittedSystem:
     integration_diagnostics: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        allowed = {"sobol_blocked", "exact_binary_mediators", "gaussian_linear_exact"}
+        allowed = {
+            "sobol_blocked",
+            "exact_binary_mediators",
+            "gaussian_linear_exact",
+            "gauss_hermite",
+        }
         if self.integration_method not in allowed:
             raise ValueError(f"unsupported integration method {self.integration_method!r}")
         nodes = tuple(self.nodes)
@@ -320,6 +326,25 @@ def _is_gaussian_linear(plan: AnalysisPlan) -> bool:
     return mediator_name not in mediator.factorization_predictors
 
 
+def _supports_gauss_hermite(plan: AnalysisPlan) -> bool:
+    """Return whether one Gaussian mediator can be integrated deterministically."""
+
+    mediator_nodes = tuple(plan.nodes[:-1])
+    gaussian_nodes = [node for node in mediator_nodes if node.family is Family.GAUSSIAN]
+    if len(gaussian_nodes) != 1:
+        return False
+    return all(node.family in {Family.GAUSSIAN, Family.BERNOULLI} for node in mediator_nodes)
+
+
+def _gauss_hermite_diagnostics() -> Mapping[str, Any]:
+    return {
+        "quadrature_order": _GAUSS_HERMITE_ORDER,
+        "accepted_draw_count": 0,
+        "tolerance": None,
+        "status": AnalysisStatus.OK.value,
+    }
+
+
 def _make_system(
     plan: AnalysisPlan,
     nodes: tuple[FittedNode, ...],
@@ -376,6 +401,16 @@ def fit_system(data: pd.DataFrame, plan: AnalysisPlan) -> FittedSystem:
             draw_budget=0,
             method="gaussian_linear_exact",
             correlation=correlation,
+        )
+    if _supports_gauss_hermite(plan):
+        return _make_system(
+            plan,
+            nodes,
+            draws=None,
+            draw_budget=0,
+            method="gauss_hermite",
+            correlation=correlation,
+            diagnostics=_gauss_hermite_diagnostics(),
         )
     return _select_integration(retained, plan, nodes, correlation)
 
@@ -464,6 +499,16 @@ def _fit_system_with_fixed_budget(
             draw_budget=0,
             method="gaussian_linear_exact",
             correlation=correlation,
+        )
+    if _supports_gauss_hermite(plan):
+        return _make_system(
+            plan,
+            nodes,
+            draws=None,
+            draw_budget=0,
+            method="gauss_hermite",
+            correlation=correlation,
+            diagnostics=_gauss_hermite_diagnostics(),
         )
     if int(draw_budget) == 0:
         raise _error(
@@ -804,6 +849,15 @@ def standardize_regime(
             mediator_exposure=mediator_exposure,
             moderator_values=moderator_values,
         )
+    if fitted.integration_method == "gauss_hermite":
+        return _gauss_hermite_regime(
+            data,
+            plan,
+            fitted,
+            outcome_exposure=outcome_exposure,
+            mediator_exposure=mediator_exposure,
+            moderator_values=moderator_values,
+        )
     return _standardize_regime_with_block(
         data,
         plan,
@@ -871,6 +925,114 @@ def _enumerate_binary_regime(
                 ) from exc
             row_total += state_probability * outcome
         total += row_total
+    if len(retained) == 0:
+        raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
+    return total / len(retained)
+
+
+def _repeat_frame(frame: pd.DataFrame, count: int) -> pd.DataFrame:
+    positions = np.repeat(np.arange(len(frame)), int(count))
+    expanded = frame.iloc[positions].copy(deep=True)
+    expanded.index = pd.RangeIndex(len(expanded))
+    return expanded
+
+
+def _gauss_hermite_regime(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    *,
+    outcome_exposure: object,
+    mediator_exposure: object,
+    moderator_values: Mapping[str, object],
+) -> float:
+    """Integrate one-Gaussian-mediator systems by fixed Hermite quadrature."""
+
+    retained = _retained_frame(data, plan)
+    errors, weights = np.polynomial.hermite.hermgauss(_GAUSS_HERMITE_ORDER)
+    errors = np.sqrt(2.0) * np.asarray(errors, dtype=float)
+    weights = np.asarray(weights, dtype=float) / np.sqrt(np.pi)
+    exposure_name = _find_exposure_name(plan)
+    total = 0.0
+
+    for _, observed in retained.iterrows():
+        row = observed.to_frame().T
+        row = _regime_frame(row, plan, mediator_exposure, moderator_values)
+        branches: list[tuple[pd.DataFrame, np.ndarray]] = [(row, np.ones(1, dtype=float))]
+        for mediator_name in _mediator_order(plan):
+            node = fitted.node_by_response[mediator_name]
+            next_branches: list[tuple[pd.DataFrame, np.ndarray]] = []
+            if node.family is Family.BERNOULLI:
+                for frame, branch_weights in branches:
+                    try:
+                        probability = np.asarray(node.predict_mean(frame), dtype=float).reshape(-1)
+                    except NodeFitError as exc:
+                        raise _error(
+                            exc.code,
+                            AnalysisStatus.FIT_FAILED,
+                            str(exc),
+                            node=mediator_name,
+                            regime=(outcome_exposure, mediator_exposure),
+                            details=dict(exc.details),
+                        ) from exc
+                    for value in (0.0, 1.0):
+                        state = frame.copy(deep=True)
+                        state[mediator_name] = value
+                        state_weights = branch_weights * (probability if value == 1.0 else 1.0 - probability)
+                        next_branches.append((state, state_weights))
+            else:
+                for frame, branch_weights in branches:
+                    if len(frame) != 1:
+                        raise _error(
+                            "quadrature_structure_failed",
+                            AnalysisStatus.FIT_FAILED,
+                            "Gauss-Hermite integration received more than one Gaussian mediator",
+                            node=mediator_name,
+                            regime=(outcome_exposure, mediator_exposure),
+                        )
+                    expanded = _repeat_frame(frame, _GAUSS_HERMITE_ORDER)
+                    try:
+                        mean = np.asarray(node.predict_mean(expanded), dtype=float).reshape(-1)
+                    except NodeFitError as exc:
+                        raise _error(
+                            exc.code,
+                            AnalysisStatus.FIT_FAILED,
+                            str(exc),
+                            node=mediator_name,
+                            regime=(outcome_exposure, mediator_exposure),
+                            details=dict(exc.details),
+                        ) from exc
+                    expanded[mediator_name] = mean + float(node.sigma) * errors
+                    next_branches.append((expanded, branch_weights * weights))
+            branches = next_branches
+
+        for frame, branch_weights in branches:
+            outcome_frame = frame.copy(deep=True)
+            outcome_frame[exposure_name] = outcome_exposure
+            for name, value in moderator_values.items():
+                outcome_frame[name] = value
+            try:
+                outcome = np.asarray(fitted.outcome_node.predict_mean(outcome_frame), dtype=float).reshape(-1)
+            except NodeFitError as exc:
+                raise _error(
+                    exc.code,
+                    AnalysisStatus.FIT_FAILED,
+                    str(exc),
+                    node=fitted.outcome_node.response,
+                    regime=(outcome_exposure, mediator_exposure),
+                    details=dict(exc.details),
+                ) from exc
+            if outcome.shape != branch_weights.shape:
+                raise _error(
+                    "quadrature_shape_failed",
+                    AnalysisStatus.FIT_FAILED,
+                    "quadrature outcome values and weights are not aligned",
+                    node=fitted.outcome_node.response,
+                    regime=(outcome_exposure, mediator_exposure),
+                    details={"outcome_shape": outcome.shape, "weight_shape": branch_weights.shape},
+                )
+            total += float(np.dot(branch_weights, outcome))
+
     if len(retained) == 0:
         raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
     return total / len(retained)
