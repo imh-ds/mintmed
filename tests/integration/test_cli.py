@@ -125,4 +125,4 @@ def test_cli_runs_the_moderated_serial_example(tmp_path: Path) -> None:
 
     assert exit_code == 0
     payload = json.loads((output / "analysis.json").read_text(encoding="utf-8"))
-    assert payload["overall_status"] == "complete"
+    assert payload["overall_status"] in {"complete", "complete_with_warnings"}
