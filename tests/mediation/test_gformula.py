@@ -222,6 +222,7 @@ def test_one_gaussian_mediator_profiles_use_deterministic_hermite_quadrature():
 def test_hermite_standardization_batches_participant_predictions(monkeypatch):
     import mintmed.models as models
     from mintmed.experiments.mediation_validation import generate_cell
+    from mintmed.gformula import compute_regime_means, fit_system
 
     fixture = generate_cell("cell09_spline_n250", 20260920)
     plan = estimate_plan(fixture.data, fixture.spec)
