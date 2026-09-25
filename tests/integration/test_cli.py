@@ -106,3 +106,23 @@ def test_cli_reports_typed_spec_error_without_traceback(tmp_path: Path, capsys) 
     assert exit_code == 2
     assert "missing_exposure" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_cli_runs_the_moderated_serial_example(tmp_path: Path) -> None:
+    repository = Path(__file__).parents[2]
+    output = tmp_path / "serial-moderated"
+
+    exit_code = main(
+        [
+            "--data",
+            str(repository / "examples/serial_moderated/data.csv"),
+            "--spec",
+            str(repository / "examples/serial_moderated/analysis.yaml"),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads((output / "analysis.json").read_text(encoding="utf-8"))
+    assert payload["overall_status"] == "complete"

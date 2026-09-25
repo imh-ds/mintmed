@@ -191,6 +191,28 @@ def test_declared_interaction_is_present_after_main_effects() -> None:
     assert sum(":" in column for column in design.columns) == 1
 
 
+def test_categorical_interaction_design_is_constructible() -> None:
+    node = make_node(
+        terms=(
+            TermSpec("exposure", TermKind.CATEGORICAL),
+            TermSpec("moderator", TermKind.CATEGORICAL),
+        ),
+        interactions=(InteractionSpec("moderator", "exposure"),),
+        category_levels={"exposure": (0, 1), "moderator": (0, 1)},
+    )
+    data = pd.DataFrame(
+        {
+            "exposure": [0, 0, 1, 1, 0, 0, 1, 1],
+            "moderator": [0, 1, 0, 1, 0, 1, 0, 1],
+        }
+    )
+
+    design = fit_design(data, node)
+
+    assert design.formula.count("C(") == 4
+    assert sum(":" in column for column in design.columns) == 1
+
+
 def test_spline_design_uses_frozen_columns_for_transform() -> None:
     node = make_node(terms=(TermSpec("time", TermKind.NATURAL_SPLINE, df=3),))
     data = pd.DataFrame({"time": np.arange(10, dtype=float)})
