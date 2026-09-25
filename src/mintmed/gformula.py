@@ -316,9 +316,12 @@ def _is_gaussian_linear(plan: AnalysisPlan) -> bool:
     mediator_names = _mediator_order(plan)
     if (
         not mediator_names
-        or len(mediator_names) < 3
-        or plan.diagnostics.get("arrangement") != "sequential"
         or len(plan.nodes) != len(mediator_names) + 1
+    ):
+        return False
+    if len(mediator_names) != 1 and not (
+        len(mediator_names) == 3
+        and plan.diagnostics.get("arrangement") == "sequential"
     ):
         return False
     if any(node.family is not Family.GAUSSIAN for node in plan.nodes):
