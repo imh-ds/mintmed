@@ -90,7 +90,10 @@ jobs:
       ${{ (github.event_name == 'workflow_dispatch' && inputs.run_pilot == true)
       || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'pilot:')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two repeats of five complete bootstrap cases exceed the old 45-minute
+    # envelope even when all cases are healthy. Keep the runtime guard finite,
+    # but allow the locked pilot to finish and emit its evidence artifact.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
