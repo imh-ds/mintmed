@@ -309,6 +309,29 @@ def test_hermite_linear_standardization_does_not_transform_patsy_designs(monkeyp
     assert calls == 0
 
 
+def test_hermite_spline_standardization_batches_outcome_transform(monkeypatch):
+    import mintmed.models as models
+    from mintmed.experiments.mediation_validation import generate_cell
+    from mintmed.gformula import compute_regime_means, fit_system
+
+    fixture = generate_cell("cell09_spline_n250", 20260920)
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    calls = 0
+    real_transform = models.transform_design
+
+    def counting_transform(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_transform(*args, **kwargs)
+
+    monkeypatch.setattr(models, "transform_design", counting_transform)
+
+    compute_regime_means(fixture.data, plan, fitted)
+
+    assert calls == 1
+
+
 def test_gaussian_linear_anchor_is_exact_and_deterministic():
     fixture, plan, fitted = _fit("linear", 100)
     from mintmed.gformula import compute_regime_means
