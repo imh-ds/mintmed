@@ -196,6 +196,7 @@ def test_categorical_interaction_design_is_constructible() -> None:
         terms=(
             TermSpec("exposure", TermKind.CATEGORICAL),
             TermSpec("moderator", TermKind.CATEGORICAL),
+            TermSpec("C", TermKind.LINEAR),
         ),
         interactions=(InteractionSpec("moderator", "exposure"),),
         category_levels={"exposure": (0, 1), "moderator": (0, 1)},
@@ -204,6 +205,7 @@ def test_categorical_interaction_design_is_constructible() -> None:
         {
             "exposure": [0, 0, 1, 1, 0, 0, 1, 1],
             "moderator": [0, 1, 0, 1, 0, 1, 0, 1],
+            "C": [-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
         }
     )
 
