@@ -403,7 +403,7 @@ def test_transform_design_rejects_missing_columns() -> None:
 
 
 def test_transform_patsy_failure_includes_variable_context(monkeypatch) -> None:
-    node = make_node(terms=(TermSpec("x", TermKind.LINEAR),))
+    node = make_node(terms=(TermSpec("x", TermKind.QUADRATIC),))
     design = fit_design(pd.DataFrame({"x": [0.0, 1.0, 2.0]}), node)
 
     def fail_transform(*args, **kwargs):

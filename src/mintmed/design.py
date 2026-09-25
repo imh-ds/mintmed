@@ -411,7 +411,7 @@ def _fast_linear_transform(
     exact; the caller then uses the general frozen ``DesignInfo`` path.
     """
 
-    if design.interactions or design.category_levels:
+    if design.interactions:
         return None
     if any(term.kind is not TermKind.LINEAR for term in design.term_metadata):
         return None
