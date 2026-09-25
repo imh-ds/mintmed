@@ -13,9 +13,9 @@ from .mediation_validation import (
     generate_cell,
     load_config,
     metric_record,
-    selected_combinations,
     run,
     seed_pair,
+    selected_combinations,
 )
 
 __all__ = [
@@ -31,7 +31,7 @@ __all__ = [
     "generate_cell",
     "load_config",
     "metric_record",
-    "selected_combinations",
     "run",
     "seed_pair",
+    "selected_combinations",
 ]
