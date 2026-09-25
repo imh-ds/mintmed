@@ -325,6 +325,26 @@ Each task entry should record:
 - **Verification:** The supported interpreter started successfully, imported the editable package, and completed all 322 tests. The runtime report remains explicitly blocked for `cell09_spline_n250` and `cell12_mixed_binary_serial_n250`; no claim is made that the pilot acceptance gate passed.
 - **Follow-up:** Run the default two-repeat pilot under supported Python 3.11 without `--allow-unsupported-runtime`, resolve or formally adjudicate the two integration-unresolved cases without shrinking the frozen design, verify the supported JSON/Markdown report pair, then update Relay Task 14. Task 15 remains deferred until that gate is closed.
 
+#### Task 14 correction — close the supported-runtime and integration blockers
+
+- **Date:** 2026-09-25
+- **Task:** Tasks 2–14 review and Task 14 runtime-acceptance correction.
+- **Status:** Completed for Tasks 2–14; Task 15 remains deferred.
+- **Schedule:** Completed on schedule for the requested final review; no external deadline was supplied.
+- **Decision:** Retain the package contract at Python `>=3.11,<3.12`, keep the locked 12-cell validation matrix unchanged, and resolve the runtime blockers through measured implementation optimizations rather than changing estimands, bootstrap counts, integration draws, or budget gates. Treat the final two-repeat GitHub Actions pilot as the authoritative runtime boundary.
+- **Rationale:** The supported Python 3.11 environment was available in GitHub Actions, so local interpreter state was not used as a release gate. The first supported pilot completed every case but exceeded the ceiling because the serial Gaussian and mixed Hermite paths repeatedly rebuilt expensive prediction structures. The corrections preserve the same response-scale effects and deterministic integration while eliminating redundant matrix construction and enabling exact expectation propagation where the declared model permits it.
+- **Actions:**
+  - Corrected the pilot timeout envelope in `ce2c042` so the complete two-repeat matrix could emit evidence.
+  - Vectorized Gaussian-Hermite branch construction in `c98d456`; added linear-design fast paths in `2ff9d2f` and `9ca38e3`; added NumPy fixed-budget Gaussian/Bernoulli node fitting in `a49263f`.
+  - Added exact recursive regime means for the locked sequential three-Gaussian validation case in `b78c4d7`, then narrowed the eligibility gate in `7dd0a18` and `ac77492` to preserve the public Sobol contracts and single-mediator anchor.
+  - Added the numeric Hermite regression contract in `978cd69` and implemented guarded numeric prediction matrices in `ed7cb68`.
+  - Added the spline batching regression contract in `fdf8fe6` and implemented shared branch tables plus one batched outcome transform for the three primary Hermite regimes in `b80aeb3`.
+  - Updated the checked-in runtime report in `d099151` and this decision log. No generated result directory, `.pm` content, or ProjectManager file was edited.
+- **Evidence:** Standard GitHub Actions verification passed for `ac77492` in run `36194597707`, for `ed7cb68` in run `36195298654`, and for `b80aeb3` in run `36196448968`; each included the Python 3.11 suite and CLI/validation smoke. The intermediate pilots were complete but over budget: run `36194802965` forecast `34.627` CPU hours after exact serial integration, and run `36195503531` forecast `19.051` CPU hours after numeric Hermite prediction. The final two-repeat pilot, run `36196715109` on `b80aeb3`, completed all five cases, all `399` bootstrap refits per case, and forecast `8.554` CPU hours including the locked 5% rerun allowance against the 12-hour ceiling. Measured analysis statuses were `complete` or `complete_with_warnings`; none were `integration_unresolved` or incomplete.
+- **Files:** `src/mintmed/gformula.py`; `src/mintmed/models.py`; `tests/mediation/test_gformula.py`; `tests/mediation/test_nodes.py`; `docs/validation/runtime_pilot.md`; `docs/validation/reference_agreement.md`; this decision log. The authoritative pilot JSON remains a GitHub Actions artifact rather than a generated repository file.
+- **Verification:** All authoritative tests and simulations for this correction ran in GitHub Actions, per the implementation constraint. No local pytest or simulation run was used. The final GHA run passed the full Python 3.11 suite, CLI/validation smoke, and the two-repeat runtime pilot. Task 13’s supported-runtime verification and Task 14’s runtime/integration acceptance are no longer blocked. Task 15 was not started.
+- **Follow-up:** Keep Task 15 deferred until explicitly requested. Use `docs/validation/runtime_pilot.md` and the GitHub Actions artifact from run `36196715109` as the final Tasks 2–14 runtime evidence. Preserve the locked matrix and acceptance gate if later maintenance changes touch fitting or integration.
+
 ## Reusable entry template
 
 ### Task NN — Name

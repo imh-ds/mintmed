@@ -112,6 +112,22 @@ suite also passed (`322 passed`). The supported environment reported:
 | Patsy | `1.0.3` |
 | verification Git commit | `4155db619f43b5b7c186b290d6b772c4379e6a57` |
 
-This clears the Python interpreter-availability blocker. It does not resolve
-the two separate Task 14 runtime-pilot integration cases documented in
-`docs/validation/runtime_pilot.md`.
+This clears the Python interpreter-availability blocker. The historical local
+verification above is superseded for release acceptance by the supported
+Python 3.11 GitHub Actions evidence below.
+
+## Final GitHub Actions verification
+
+The final supported-runtime verification ran on GitHub Actions run
+`36196715109` from commit `b80aeb3`. The Python 3.11.16 full suite and CLI/
+validation smoke both passed. The same workflow's two-repeat Task 14 pilot
+completed all five measured cases and passed the locked runtime boundary:
+
+- 2,400 point fits;
+- 957,600 bootstrap refits;
+- 960,000 complete analyses;
+- 8.554 projected CPU hours against the 12-hour ceiling.
+
+The runtime report is recorded in `docs/validation/runtime_pilot.md`. This
+closes the supported-runtime and integration-pilot blockers for Tasks 13–14;
+Task 15 remains deferred.
