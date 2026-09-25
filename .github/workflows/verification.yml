@@ -86,7 +86,9 @@ jobs:
 
   runtime-pilot:
     name: Task 14 runtime pilot
-    if: ${{ inputs.run_pilot == true }}
+    if: >-
+      ${{ (github.event_name == 'workflow_dispatch' && inputs.run_pilot == true)
+      || (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'pilot:')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -100,7 +102,7 @@ jobs:
       - name: Run runtime pilot
         run: >
           python scripts/run_runtime_pilot.py
-          --repeats "${{ inputs.pilot_repeats }}"
+          --repeats "${{ inputs.pilot_repeats || '2' }}"
           --output results/generated/runtime-pilot.json
           --markdown results/generated/runtime-pilot.md
       - name: Upload runtime-pilot evidence
