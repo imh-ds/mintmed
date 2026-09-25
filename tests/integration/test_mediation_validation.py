@@ -19,6 +19,7 @@ from mintmed.experiments.mediation_validation import (
     generate_cell,
     load_config,
     metric_record,
+    row_from_payload,
     seed_pair,
     selected_combinations,
 )
@@ -303,6 +304,17 @@ def test_standard_payload_extracts_point_effects_and_bootstrap_intervals() -> No
     assert metrics["TNIE"]["estimate"] == pytest.approx(0.2)
     assert metrics["TNIE"]["lower"] == pytest.approx(-0.1)
     assert metrics["TNIE"]["upper"] == pytest.approx(0.5)
+
+    row = row_from_payload(
+        payload,
+        config=load_config(SMOKE),
+        cell=cell_definition("cell01_linear_n100"),
+        replicate=0,
+        data_seed=1,
+        analysis_seed=2,
+        runtime_seconds=0.1,
+    )
+    assert row["cell_id"] == "cell01_linear_n100"
 
 
 def test_cell_ten_payload_extracts_direct_points_and_paired_difference_interval() -> None:

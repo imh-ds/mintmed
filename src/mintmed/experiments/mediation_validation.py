@@ -939,6 +939,7 @@ def row_from_payload(
         "accepted_draw_budget": draw_budget,
     }
     return {
+        "cell_id": cell.cell_id,
         "replicate": int(replicate),
         "data_seed": int(data_seed),
         "analysis_seed": int(analysis_seed),
