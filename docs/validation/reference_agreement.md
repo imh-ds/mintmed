@@ -42,10 +42,11 @@ The mapping is:
 
 ## Environment and provenance
 
-The available diagnostic run used Python `3.12.14`; the package-supported
-Python 3.11 interpreter was unavailable because the repository `.venv`
-launcher points to a missing base executable. Therefore this result is a
-diagnostic compatibility record, not supported-runtime release evidence.
+The initial diagnostic run used Python `3.12.14`; the package-supported
+Python 3.11 interpreter was unavailable at that time because the repository
+`.venv` launcher pointed to a missing base executable. That original result is
+retained below as a diagnostic compatibility record. The supported-runtime
+rerun is recorded in the next section.
 
 | Component | Version/value |
 |---|---|
@@ -84,7 +85,33 @@ $env:PYTHONPATH = 'src'
 & 'C:\tmp\scova-v4-test\Scripts\python.exe' -m pytest tests/integration/test_reference_agreement.py::test_statsmodels_anchor_matches_mintmed_for_one_linear_model -q
 ```
 
-The command above reproduces the diagnostic result in the available Python
-3.12 environment. Before Task 15, rerun the same test under the supported
-Python `>=3.11,<3.12` environment and replace this diagnostic status only if
-the recorded versions, hashes, and observed values are updated together.
+The command above reproduces the historical diagnostic result in the Python
+3.12 environment. The supported-runtime command is:
+
+```powershell
+& '.venv\Scripts\python.exe' -m pytest tests/integration/test_reference_agreement.py::test_statsmodels_anchor_matches_mintmed_for_one_linear_model -q
+```
+
+The supported command and the full repository suite passed on 2026-09-25;
+the original 3.12 provenance and observed values remain unchanged.
+
+## Supported-runtime verification
+
+On 2026-09-25, the focused reference/runtime acceptance suite passed under the
+repository `.venv` with Python `3.11.9` (`43 passed`). The complete repository
+suite also passed (`322 passed`). The supported environment reported:
+
+| Component | Version/value |
+|---|---|
+| Python | `3.11.9` |
+| mintmed | `0.1.0` |
+| Statsmodels | `0.14.6` |
+| NumPy | `2.4.6` |
+| SciPy | `1.17.1` |
+| pandas | `3.0.6` |
+| Patsy | `1.0.3` |
+| verification Git commit | `4155db619f43b5b7c186b290d6b772c4379e6a57` |
+
+This clears the Python interpreter-availability blocker. It does not resolve
+the two separate Task 14 runtime-pilot integration cases documented in
+`docs/validation/runtime_pilot.md`.

@@ -311,6 +311,20 @@ Each task entry should record:
 - **Verification:** `./.venv/Scripts/python.exe -m pytest ...` was attempted and failed before pytest startup due to the missing Python 3.11 base interpreter. Diagnostic Python 3.12.14 verification used `PYTHONPATH=src`: focused reference/runtime tests `42 passed` before final contract additions; final full suite `322 passed`; `python -m compileall -q src tests` passed; `pip check` reported `No broken requirements found`; targeted Ruff reported `All checks passed`; `git diff --check` passed. The pilot report is explicitly `blocked`, records Python `3.12.14`, reports the exact integration blockers, and does not claim the 12-hour budget boundary.
 - **Follow-up:** Restore Python `>=3.11,<3.12`, rerun the supported reference suite and full suite, run the default two-repeat pilot without `--allow-unsupported-runtime`, resolve or formally adjudicate the spline/mixed integration-unresolved cases without shrinking the frozen design, verify the supported JSON/Markdown pair, and only then update Relay Task 14 to done. Task 15 must not start while this gate is blocked.
 
+#### Task 14 correction — restore supported Python 3.11 verification
+
+- **Date:** 2026-09-25
+- **Task:** Task 14 — correction to the supported-runtime evidence after restoring interpreter discovery.
+- **Status:** Python blocker resolved; Task 14 remains blocked by two separate runtime-pilot integration cases.
+- **Schedule:** On schedule for the environment-recovery follow-up; no external deadline was supplied.
+- **Decision:** Keep the package contract at Python `>=3.11,<3.12` and use the existing repository `.venv` rather than broadening support to Python 3.14 or recreating a valid environment unnecessarily.
+- **Rationale:** The installed Python 3.11.9 and 3.14.3 interpreters are healthy. The apparent launcher failure came from a non-elevated diagnostic context; an elevated launcher probe discovered both installations, and the existing `.venv` already launched as Python 3.11.9 with a valid editable install and dependency set.
+- **Actions:** Rechecked `py -3.11` and `py -3.14`; verified `.venv\pyvenv.cfg`, the editable `mintmed==0.1.0` install, and `pip check`; ran the focused reference/runtime acceptance suite and the full repository suite under `.venv`. No tracked source or package-contract changes were needed.
+- **Evidence:** `py -3.11 --version` reported `Python 3.11.9`; `py -3.14 --version` reported `Python 3.14.3`; `pip check` reported `No broken requirements found`; focused reference/runtime acceptance passed `43 tests`; full repository suite passed `322 tests`.
+- **Files:** [reference record](../../docs/validation/reference_agreement.md); [runtime report](../../docs/validation/runtime_pilot.md); this decision log.
+- **Verification:** The supported interpreter started successfully, imported the editable package, and completed all 322 tests. The runtime report remains explicitly blocked for `cell09_spline_n250` and `cell12_mixed_binary_serial_n250`; no claim is made that the pilot acceptance gate passed.
+- **Follow-up:** Run the default two-repeat pilot under supported Python 3.11 without `--allow-unsupported-runtime`, resolve or formally adjudicate the two integration-unresolved cases without shrinking the frozen design, verify the supported JSON/Markdown report pair, then update Relay Task 14. Task 15 remains deferred until that gate is closed.
+
 ## Reusable entry template
 
 ### Task NN — Name
