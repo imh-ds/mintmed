@@ -287,6 +287,30 @@ Each task entry should record:
 - **Verification:** Targeted Ruff for changed Task 13 files reported `All checks passed!`; `git diff --check` passed. The required Python 3.11 launcher remains unavailable, so the task remains in review and no supported-runtime pass or done status is claimed.
 - **Follow-up:** Repeat the same checks under Python 3.11, then update the main Task 13 entry and Relay status if the supported run passes.
 
+### Task 14 — Complete analytic, independent-package, and runtime acceptance
+
+- **Date:** 2026-09-24
+- **Task:** Task 14 — Complete analytic, independent-package, and runtime acceptance before the frozen validation matrix.
+- **Status:** Implementation complete; supported-runtime acceptance blocked.
+- **Schedule:** Implementation checkpoints completed on schedule for the requested task sequence. Release acceptance is delayed by the unavailable supported Python 3.11 interpreter and two unresolved diagnostic integration cases.
+- **Decision:** Keep acceptance logic outside the estimator. Use independent population formulas, exact enumeration/quadrature, public g-formula/effect/API/report interfaces, and a process-isolated complete-bootstrap runtime pilot. Preserve the full Task 13 design: 12 cells, 200 datasets per cell, 399 participant-bootstrap refits, 256 integration draws, `1.0e-8` tolerance, 2,400 point fits, 957,600 bootstrap refits, 960,000 complete analyses, and a 5% targeted-rerun allowance against a 12-hour CPU ceiling. Do not mark the task complete while supported-runtime evidence is unavailable or while any pilot case is incomplete.
+- **Rationale:** A separate evidence boundary prevents the estimator or validation runner from defining its own truth. Independent fixtures/formulas catch graph, contrast, integration, and binary-semantics errors; full-case timing prevents a point-fit-only forecast from understating the matrix cost. Process isolation makes peak RSS and failure status auditable, while source and derived configuration hashes make one-cell pilot measurements traceable to the locked matrix.
+- **Actions:**
+  - Added independent Task 7 truth/integration/effect-structure/moderator/determinism tests and the narrow Statsmodels compatibility anchor. Commits: `134fbc2` and `46a6408`.
+  - Added the complete runtime pilot, pure forecast/schema contracts, isolated worker execution, full bootstrap/refit counting, report round-trip verification, JSON rejection of nonfinite values, peak-RSS capture, and deterministic Markdown rendering. Commit: `6122a76`.
+  - Preserved blocked-case diagnostics in the case summary and fixed Windows peak-RSS API binding. Commit: `f89336f`.
+  - Added one-cell derived configuration hashing while retaining the full source configuration hash; corrected measurement records to use the derived hash. Commits: `9d58691` and `8911b09`.
+  - Executed the diagnostic pilot and generated the checked-in [runtime report](../../docs/validation/runtime_pilot.md). The final report commit is `a10e9a8`.
+  - Full-suite verification exposed a Task 12 CLI boundary mismatch: direct `mintmed.cli.main()` calls expected integer exit codes while `_fail()` raised `SystemExit`. Preserved command-line behavior and translated integer `SystemExit` values at the public function boundary. Commit: `b50db33`.
+- **Evidence:**
+  - Independent reference suite: Python 3.12.14 diagnostic run, `32 passed`; TE/PNDE/TNIE Statsmodels differences were `0.0108219423`, `0.0073924468`, and `0.0034294956`, below the predeclared `0.08` anchor tolerance.
+  - Runtime-pilot contracts: final `11 passed`.
+  - Final diagnostic pilot: three cases completed 399 bootstrap refits and report serialization; `cell09_spline_n250` and `cell12_mixed_binary_serial_n250` reached `integration_unresolved` before bootstrap. The raw diagnostic JSON is generated under ignored `results/generated/` and is not committed.
+  - Final repository suite under diagnostic Python 3.12.14: `322 passed`, with one managed pytest cache-permission warning. The required `.venv` Python 3.11 command could not start because `C:\Users\imhoh\AppData\Local\Programs\Python\Python311\python.exe` is missing.
+- **Files:** [reference tests](../../tests/integration/test_reference_agreement.py); [runtime-pilot tests](../../tests/integration/test_runtime_pilot.py); [pilot runner](../../scripts/run_runtime_pilot.py); [reference record](../../docs/validation/reference_agreement.md); [runtime report](../../docs/validation/runtime_pilot.md); this decision log; ignored Task 14 ledger `.superpowers/sdd/task-14-acceptance/progress.md`.
+- **Verification:** `./.venv/Scripts/python.exe -m pytest ...` was attempted and failed before pytest startup due to the missing Python 3.11 base interpreter. Diagnostic Python 3.12.14 verification used `PYTHONPATH=src`: focused reference/runtime tests `42 passed` before final contract additions; final full suite `322 passed`; `python -m compileall -q src tests` passed; `pip check` reported `No broken requirements found`; targeted Ruff reported `All checks passed`; `git diff --check` passed. The pilot report is explicitly `blocked`, records Python `3.12.14`, reports the exact integration blockers, and does not claim the 12-hour budget boundary.
+- **Follow-up:** Restore Python `>=3.11,<3.12`, rerun the supported reference suite and full suite, run the default two-repeat pilot without `--allow-unsupported-runtime`, resolve or formally adjudicate the spline/mixed integration-unresolved cases without shrinking the frozen design, verify the supported JSON/Markdown pair, and only then update Relay Task 14 to done. Task 15 must not start while this gate is blocked.
+
 ## Reusable entry template
 
 ### Task NN — Name
