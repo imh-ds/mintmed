@@ -982,6 +982,150 @@ def _repeat_frame(frame: pd.DataFrame, count: int) -> pd.DataFrame:
     return expanded
 
 
+def _gauss_hermite_branches(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    *,
+    mediator_exposure: object,
+    moderator_values: Mapping[str, object],
+) -> tuple[pd.DataFrame, np.ndarray, int]:
+    """Build one participant-level Hermite and binary mediator branch table."""
+
+    retained = _retained_frame(data, plan)
+    if len(retained) == 0:
+        raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
+
+    errors, weights = np.polynomial.hermite.hermgauss(_GAUSS_HERMITE_ORDER)
+    errors = np.sqrt(2.0) * np.asarray(errors, dtype=float)
+    weights = np.asarray(weights, dtype=float) / np.sqrt(np.pi)
+    branches = _regime_frame(retained, plan, mediator_exposure, moderator_values)
+    branch_weights = np.ones(len(branches), dtype=float)
+    for mediator_name in _mediator_order(plan):
+        node = fitted.node_by_response[mediator_name]
+        if node.family is Family.BERNOULLI:
+            try:
+                probability = np.asarray(_predict_mean(node, branches), dtype=float).reshape(-1)
+            except NodeFitError as exc:
+                raise _error(
+                    exc.code,
+                    AnalysisStatus.FIT_FAILED,
+                    str(exc),
+                    node=mediator_name,
+                    regime=(mediator_exposure, mediator_exposure),
+                    details=dict(exc.details),
+                ) from exc
+            zero = branches.copy(deep=True)
+            one = branches.copy(deep=True)
+            zero[mediator_name] = 0.0
+            one[mediator_name] = 1.0
+            branches = pd.concat((zero, one), ignore_index=True)
+            branch_weights = np.concatenate(
+                (branch_weights * (1.0 - probability), branch_weights * probability)
+            )
+            continue
+
+        expanded = _repeat_frame(branches, _GAUSS_HERMITE_ORDER)
+        try:
+            mean = np.asarray(_predict_mean(node, branches), dtype=float).reshape(-1)
+        except NodeFitError as exc:
+            raise _error(
+                exc.code,
+                AnalysisStatus.FIT_FAILED,
+                str(exc),
+                node=mediator_name,
+                regime=(mediator_exposure, mediator_exposure),
+                details=dict(exc.details),
+            ) from exc
+        expanded[mediator_name] = np.repeat(mean, _GAUSS_HERMITE_ORDER) + np.tile(
+            float(node.sigma) * errors,
+            len(mean),
+        )
+        branches = expanded
+        branch_weights = np.repeat(branch_weights, _GAUSS_HERMITE_ORDER) * np.tile(
+            weights,
+            len(mean),
+        )
+    return branches, branch_weights, len(retained)
+
+
+def _gauss_hermite_means(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    *,
+    moderator_values: Mapping[str, object],
+    reference: object,
+    comparison: object,
+) -> tuple[float, float, float]:
+    """Evaluate all primary Hermite regimes with one outcome transform."""
+
+    reference_branches, reference_weights, retained_count = _gauss_hermite_branches(
+        data,
+        plan,
+        fitted,
+        mediator_exposure=reference,
+        moderator_values=moderator_values,
+    )
+    comparison_branches, comparison_weights, comparison_count = _gauss_hermite_branches(
+        data,
+        plan,
+        fitted,
+        mediator_exposure=comparison,
+        moderator_values=moderator_values,
+    )
+    if comparison_count != retained_count:
+        raise _error(
+            "quadrature_shape_failed",
+            AnalysisStatus.FIT_FAILED,
+            "Hermite regime branch tables have different retained row counts",
+            details={"reference_count": retained_count, "comparison_count": comparison_count},
+        )
+
+    frames: list[pd.DataFrame] = []
+    for outcome_exposure, branches in (
+        (reference, reference_branches),
+        (comparison, reference_branches),
+        (comparison, comparison_branches),
+    ):
+        frame = branches.copy(deep=True)
+        frame[_find_exposure_name(plan)] = outcome_exposure
+        for name, value in moderator_values.items():
+            frame[name] = value
+        frames.append(frame)
+    combined = pd.concat(frames, ignore_index=True)
+    combined_weights = np.concatenate(
+        (reference_weights, reference_weights, comparison_weights)
+    )
+    try:
+        outcome = np.asarray(_predict_mean(fitted.outcome_node, combined), dtype=float).reshape(-1)
+    except NodeFitError as exc:
+        raise _error(
+            exc.code,
+            AnalysisStatus.FIT_FAILED,
+            str(exc),
+            node=fitted.outcome_node.response,
+            regime=(comparison, comparison),
+            details=dict(exc.details),
+        ) from exc
+    if outcome.shape != combined_weights.shape:
+        raise _error(
+            "quadrature_shape_failed",
+            AnalysisStatus.FIT_FAILED,
+            "batched quadrature outcome values and weights are not aligned",
+            node=fitted.outcome_node.response,
+            regime=(comparison, comparison),
+            details={"outcome_shape": outcome.shape, "weight_shape": combined_weights.shape},
+        )
+    branch_count = reference_weights.size
+    second_end = 2 * branch_count
+    return (
+        float(np.dot(combined_weights[:branch_count], outcome[:branch_count]) / retained_count),
+        float(np.dot(combined_weights[branch_count:second_end], outcome[branch_count:second_end]) / retained_count),
+        float(np.dot(combined_weights[second_end:], outcome[second_end:]) / retained_count),
+    )
+
+
 def _gauss_hermite_regime(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -1140,6 +1284,17 @@ def _compute_means_with_system(data: pd.DataFrame, fitted: FittedSystem, draws: 
     moderator_values = plan.contrast.moderator_values
     reference = plan.contrast.reference
     comparison = plan.contrast.comparison
+    if fitted.integration_method == "gauss_hermite":
+        return RegimeMeans(
+            *_gauss_hermite_means(
+                data,
+                plan,
+                fitted,
+                moderator_values=moderator_values,
+                reference=reference,
+                comparison=comparison,
+            )
+        )
     values = (
         standardize_regime(data, plan, fitted, outcome_exposure=reference, mediator_exposure=reference, moderator_values=moderator_values, draws=draws),
         standardize_regime(data, plan, fitted, outcome_exposure=comparison, mediator_exposure=reference, moderator_values=moderator_values, draws=draws),
