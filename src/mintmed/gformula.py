@@ -890,6 +890,39 @@ def _regime_frame(row: pd.DataFrame, plan: AnalysisPlan, exposure: object, moder
     return frame
 
 
+def _linear_prediction_matrix(node: FittedNode, frame: pd.DataFrame) -> np.ndarray | None:
+    """Build a numeric matrix for a provably all-linear frozen design."""
+
+    design = node.design
+    if design.interactions or any(term.kind is not TermKind.LINEAR for term in design.term_metadata):
+        return None
+    expected_columns = tuple(
+        (["Intercept"] if design.columns and design.columns[0] == "Intercept" else [])
+        + [term.expression for term in design.term_metadata]
+    )
+    if design.columns != expected_columns:
+        return None
+    values: list[np.ndarray] = []
+    if design.columns and design.columns[0] == "Intercept":
+        values.append(np.ones(len(frame), dtype=float))
+    try:
+        values.extend(
+            frame[term.variable].to_numpy(dtype=float, copy=False)
+            for term in design.term_metadata
+        )
+        matrix = np.column_stack(values)
+    except (KeyError, TypeError, ValueError):
+        return None
+    if matrix.ndim != 2 or not np.isfinite(matrix).all():
+        return None
+    return np.asarray(matrix, dtype=float)
+
+
+def _predict_mean(node: FittedNode, frame: pd.DataFrame) -> np.ndarray:
+    matrix = _linear_prediction_matrix(node, frame)
+    return node.predict_mean(matrix if matrix is not None else frame)
+
+
 def _enumerate_binary_regime(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -982,7 +1015,7 @@ def _gauss_hermite_regime(
         node = fitted.node_by_response[mediator_name]
         if node.family is Family.BERNOULLI:
             try:
-                probability = np.asarray(node.predict_mean(branches), dtype=float).reshape(-1)
+                probability = np.asarray(_predict_mean(node, branches), dtype=float).reshape(-1)
             except NodeFitError as exc:
                 raise _error(
                     exc.code,
@@ -1004,7 +1037,7 @@ def _gauss_hermite_regime(
 
         expanded = _repeat_frame(branches, _GAUSS_HERMITE_ORDER)
         try:
-            mean = np.asarray(node.predict_mean(branches), dtype=float).reshape(-1)
+            mean = np.asarray(_predict_mean(node, branches), dtype=float).reshape(-1)
         except NodeFitError as exc:
             raise _error(
                 exc.code,
@@ -1029,7 +1062,7 @@ def _gauss_hermite_regime(
     for name, value in moderator_values.items():
         outcome_frame[name] = value
     try:
-        outcome = np.asarray(fitted.outcome_node.predict_mean(outcome_frame), dtype=float).reshape(-1)
+        outcome = np.asarray(_predict_mean(fitted.outcome_node, outcome_frame), dtype=float).reshape(-1)
     except NodeFitError as exc:
         raise _error(
             exc.code,
