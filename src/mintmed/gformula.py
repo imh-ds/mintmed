@@ -313,17 +313,19 @@ def _residual_correlation(retained: pd.DataFrame, plan: AnalysisPlan, nodes: Seq
 
 
 def _is_gaussian_linear(plan: AnalysisPlan) -> bool:
-    if len(_mediator_order(plan)) != 1 or len(plan.nodes) != 2:
+    mediator_names = _mediator_order(plan)
+    if not mediator_names or len(plan.nodes) != len(mediator_names) + 1:
         return False
-    mediator, outcome = plan.nodes
-    if mediator.family is not Family.GAUSSIAN or outcome.family is not Family.GAUSSIAN:
+    if any(node.family is not Family.GAUSSIAN for node in plan.nodes):
         return False
-    if mediator.interactions or outcome.interactions:
+    if any(node.interactions for node in plan.nodes):
         return False
     if any(TermKind(term.kind) is not TermKind.LINEAR for node in plan.nodes for term in node.terms):
         return False
-    mediator_name = _mediator_order(plan)[0]
-    return mediator_name not in mediator.factorization_predictors
+    return all(
+        node.response not in node.factorization_predictors
+        for node in plan.nodes[:-1]
+    )
 
 
 def _supports_gauss_hermite(plan: AnalysisPlan) -> bool:
@@ -1051,21 +1053,33 @@ def _gaussian_linear_regime(
     moderator_values: Mapping[str, object],
 ) -> float:
     retained = _retained_frame(data, plan)
-    mediator_name = _mediator_order(plan)[0]
-    mediator_frame = _regime_frame(retained, plan, mediator_exposure, moderator_values)
-    try:
-        mediator_mean = fitted.node_by_response[mediator_name].predict_mean(mediator_frame)
-    except NodeFitError as exc:
-        raise _error(
-            exc.code,
-            AnalysisStatus.FIT_FAILED,
-            str(exc),
-            node=mediator_name,
-            regime=(outcome_exposure, mediator_exposure),
-            details=dict(exc.details),
-        ) from exc
+    simulated: dict[str, np.ndarray] = {}
+    for mediator_name in _mediator_order(plan):
+        mediator_frame = _regime_frame(
+            retained,
+            plan,
+            mediator_exposure,
+            moderator_values,
+        )
+        for simulated_name, simulated_mean in simulated.items():
+            mediator_frame[simulated_name] = simulated_mean
+        try:
+            simulated[mediator_name] = np.asarray(
+                fitted.node_by_response[mediator_name].predict_mean(mediator_frame),
+                dtype=float,
+            )
+        except NodeFitError as exc:
+            raise _error(
+                exc.code,
+                AnalysisStatus.FIT_FAILED,
+                str(exc),
+                node=mediator_name,
+                regime=(outcome_exposure, mediator_exposure),
+                details=dict(exc.details),
+            ) from exc
     outcome_frame = _regime_frame(retained, plan, outcome_exposure, moderator_values)
-    outcome_frame[mediator_name] = mediator_mean
+    for mediator_name, mediator_mean in simulated.items():
+        outcome_frame[mediator_name] = mediator_mean
     try:
         outcome_mean = fitted.outcome_node.predict_mean(outcome_frame)
     except NodeFitError as exc:
