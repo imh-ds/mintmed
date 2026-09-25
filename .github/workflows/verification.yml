@@ -41,6 +41,49 @@ jobs:
       - name: Run full test suite
         run: python -m pytest -q
 
+  cli-and-validation:
+    name: CLI examples and validation smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Run single mediation example
+        run: >
+          python -m mintmed.cli
+          --data examples/single/data.csv
+          --spec examples/single/analysis.yaml
+          --output results/generated/example-single
+      - name: Run parallel mediation example
+        run: >
+          python -m mintmed.cli
+          --data examples/parallel/data.csv
+          --spec examples/parallel/analysis.yaml
+          --output results/generated/example-parallel
+      - name: Run moderated serial mediation example
+        run: >
+          python -m mintmed.cli
+          --data examples/serial_moderated/data.csv
+          --spec examples/serial_moderated/analysis.yaml
+          --output results/generated/example-serial-moderated
+      - name: Run validation smoke configuration
+        run: >
+          python -m mintmed.experiments.mediation_validation
+          --config configs/mediation_validation_smoke.yaml
+          --output results/generated/validation-smoke
+      - name: Upload CLI and validation evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-validation-${{ github.run_id }}
+          path: results/generated/
+          if-no-files-found: warn
+          retention-days: 14
+
   runtime-pilot:
     name: Task 14 runtime pilot
     if: ${{ inputs.run_pilot == true }}
