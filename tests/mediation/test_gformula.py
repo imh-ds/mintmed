@@ -242,6 +242,29 @@ def test_hermite_standardization_batches_participant_predictions(monkeypatch):
     assert max(calls) >= len(fixture.data)
 
 
+def test_linear_sobol_standardization_does_not_rebuild_patsy_matrices(monkeypatch):
+    import patsy
+    from mintmed.experiments.mediation_validation import generate_cell
+    from mintmed.gformula import compute_regime_means, fit_system
+
+    fixture = generate_cell("cell07_serial_three_n200", 20260920)
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    calls = 0
+    real_build = patsy.build_design_matrices
+
+    def counting_build(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_build(*args, **kwargs)
+
+    monkeypatch.setattr(patsy, "build_design_matrices", counting_build)
+
+    compute_regime_means(fixture.data, plan, fitted)
+
+    assert calls == 0
+
+
 def test_hermite_profile_bootstrap_refits_remain_complete():
     from dataclasses import replace
 
