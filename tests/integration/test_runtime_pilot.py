@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -11,6 +11,7 @@ from scripts.run_runtime_pilot import (
     PILOT_CELL_IDS,
     PilotMeasurement,
     _json_text,
+    _summarize_cases,
     forecast_cpu_hours,
     render_markdown,
 )
@@ -113,6 +114,37 @@ def test_forecast_marks_incomplete_case_as_blocked() -> None:
     assert forecast["budget_pass"] is False
 
 
+def test_case_summary_preserves_worker_block_reason() -> None:
+    measurements = _complete_measurements(cpu_seconds=1.0)
+    measurements[-2] = replace(
+        measurements[-2],
+        cell_id="cell09_spline_n250",
+        status="blocked",
+        bootstrap_requested=0,
+        bootstrap_attempted=0,
+        bootstrap_fit_count=0,
+        draw_budget=4096,
+        integration_method="sobol_blocked",
+    )
+    records = [
+        {
+            "measurement": {"cell_id": "cell09_spline_n250"},
+            "status": "blocked",
+            "analysis_status": "integration_unresolved",
+            "bootstrap_status": None,
+            "report_serialized": True,
+        }
+    ]
+
+    case = next(
+        item for item in _summarize_cases(measurements, records) if item["cell_id"] == "cell09_spline_n250"
+    )
+
+    assert case["analysis_statuses"] == ["integration_unresolved"]
+    assert case["bootstrap_statuses"] == []
+    assert case["report_serialized"] is True
+
+
 def test_markdown_is_deterministic_and_contains_no_absolute_path() -> None:
     payload = {
         "schema_version": 1,
@@ -141,6 +173,36 @@ def test_markdown_is_deterministic_and_contains_no_absolute_path() -> None:
     assert first == second
     assert "C:\\Users" not in first
     assert "configs/mediation_validation.yaml" in first
+
+
+def test_markdown_includes_blocked_analysis_status() -> None:
+    payload = {
+        "status": "blocked",
+        "supported_python": ">=3.11,<3.12",
+        "source_config": "configs/mediation_validation.yaml",
+        "source_config_hash": "config",
+        "git_commit": "abc123",
+        "environment": {"python": "3.12.14"},
+        "pilot_settings": {"repeats": 1, "bootstrap_replicates": 399, "integration_draws": 256, "integration_tolerance": 1e-8, "rerun_fraction": 0.05, "ceiling_cpu_hours": 12.0},
+        "cases": [
+            {
+                "cell_id": "cell09_spline_n250",
+                "n": 250,
+                "repeat_count": 1,
+                "median_cpu_seconds": 1.0,
+                "median_wall_seconds": 1.0,
+                "max_peak_rss_bytes": 1024,
+                "statuses": ["blocked"],
+                "analysis_statuses": ["integration_unresolved"],
+            }
+        ],
+        "forecast": {"matrix_point_fits": 2400, "matrix_bootstrap_refits": 957600, "matrix_complete_analyses": 960000, "budget_pass": False, "proxy_map": {}},
+    }
+
+    report = render_markdown(payload)
+
+    assert "Analysis status" in report
+    assert "integration_unresolved" in report
 
 
 def test_json_projection_rejects_nonfinite_values() -> None:

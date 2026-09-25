@@ -189,9 +189,14 @@ def _peak_rss_bytes() -> int:
 
         counters = ProcessMemoryCounters()
         counters.cb = ctypes.sizeof(ProcessMemoryCounters)
-        process = ctypes.windll.kernel32.GetCurrentProcess()
-        get_info = ctypes.windll.psapi.GetProcessMemoryInfo
-        get_info(process, ctypes.byref(counters), counters.cb)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        process = kernel32.GetCurrentProcess()
+        get_info = psapi.GetProcessMemoryInfo
+        get_info.argtypes = [ctypes.c_void_p, ctypes.POINTER(ProcessMemoryCounters), ctypes.c_ulong]
+        get_info.restype = ctypes.c_int
+        if not get_info(process, ctypes.byref(counters), counters.cb):
+            return 0
         return int(counters.PeakWorkingSetSize)
 
     import resource
@@ -405,6 +410,34 @@ def _summarize_cases(measurements: Sequence[PilotMeasurement], records: Sequence
         cell_records = [record for record in records if record.get("measurement", {}).get("cell_id") == cell_id]
         cpu_values = [item.cpu_seconds for item in cell_measurements]
         wall_values = [item.wall_seconds for item in cell_measurements]
+        analysis_statuses = sorted(
+            {
+                str(record["analysis_status"])
+                for record in cell_records
+                if record.get("analysis_status")
+            }
+        )
+        bootstrap_statuses = sorted(
+            {
+                str(record["bootstrap_status"])
+                for record in cell_records
+                if record.get("bootstrap_status")
+            }
+        )
+        error_types = sorted(
+            {
+                str(record["error_type"])
+                for record in cell_records
+                if record.get("error_type")
+            }
+        )
+        error_messages = sorted(
+            {
+                str(record["error_message"])
+                for record in cell_records
+                if record.get("error_message")
+            }
+        )
         output.append(
             {
                 "cell_id": cell_id,
@@ -416,6 +449,10 @@ def _summarize_cases(measurements: Sequence[PilotMeasurement], records: Sequence
                 "max_peak_rss_bytes": max((item.peak_rss_bytes for item in cell_measurements), default=None),
                 "statuses": sorted({item.status for item in cell_measurements}),
                 "report_serialized": all(bool(record.get("report_serialized")) for record in cell_records),
+                "analysis_statuses": analysis_statuses,
+                "bootstrap_statuses": bootstrap_statuses,
+                "error_types": error_types,
+                "error_messages": error_messages,
             }
         )
     return output
@@ -536,11 +573,12 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
     for key, value in sorted(environment.items()):
         rendered = json.dumps(value, sort_keys=True) if isinstance(value, Mapping) else str(value)
         lines.append(f"| `{key}` | `{rendered}` |")
-    lines.extend(["", "## Measured cases", "", "| Cell | N | Repeats | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status |", "|---|---:|---:|---:|---:|---:|---|"])
+    lines.extend(["", "## Measured cases", "", "| Cell | N | Repeats | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |", "|---|---:|---:|---:|---:|---:|---|---|"])
     for case in cases:
         status = ", ".join(case.get("statuses", [])) or "blocked"
+        analysis_status = ", ".join(case.get("analysis_statuses", [])) or "unavailable"
         lines.append(
-            "| `{cell_id}` | {n} | {repeat_count} | {cpu} | {wall} | {rss} | {status} |".format(
+            "| `{cell_id}` | {n} | {repeat_count} | {cpu} | {wall} | {rss} | {status} | {analysis_status} |".format(
                 cell_id=case.get("cell_id"),
                 n=case.get("n"),
                 repeat_count=case.get("repeat_count"),
@@ -548,8 +586,11 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
                 wall=_format_number(case.get("median_wall_seconds")),
                 rss=case.get("max_peak_rss_bytes") if case.get("max_peak_rss_bytes") is not None else "blocked",
                 status=status,
+                analysis_status=analysis_status,
             )
         )
+        for message in case.get("error_messages", []):
+            lines.append(f"  - `{case.get('cell_id')}` worker error: {message}")
     lines.extend(
         [
             "",
