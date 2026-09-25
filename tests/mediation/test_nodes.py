@@ -96,6 +96,19 @@ def test_gaussian_fit_matches_statsmodels_and_freezes_diagnostics() -> None:
     assert fitted.diagnostics().coefficients_finite is True
 
 
+def test_fast_linear_gaussian_fit_does_not_call_statsmodels(monkeypatch) -> None:
+    def fail_ols(*args, **kwargs):
+        raise AssertionError("fixed-budget linear fits must use NumPy")
+
+    monkeypatch.setattr(models.sm, "OLS", fail_ols)
+
+    fitted = fit_node(gaussian_data(), make_node(), fast=True)
+
+    assert isinstance(fitted, GaussianNode)
+    assert np.isfinite(fitted.coefficients).all()
+    assert np.isfinite(fitted.sigma)
+
+
 def test_gaussian_prediction_accepts_frozen_matrix_and_data_frame() -> None:
     data = gaussian_data()
     fitted = fit_node(data, make_node())
@@ -257,6 +270,23 @@ def test_bernoulli_fit_matches_statsmodels_and_records_events() -> None:
     assert diagnostics.non_events == 6
     assert np.isfinite(diagnostics.log_likelihood)
     assert np.isfinite(diagnostics.deviance)
+
+
+def test_fast_linear_bernoulli_fit_does_not_call_statsmodels(monkeypatch) -> None:
+    def fail_glm(*args, **kwargs):
+        raise AssertionError("fixed-budget linear fits must use NumPy")
+
+    monkeypatch.setattr(models.sm, "GLM", fail_glm)
+
+    fitted = fit_node(
+        bernoulli_data(),
+        make_node(family=Family.BERNOULLI),
+        fast=True,
+    )
+
+    assert isinstance(fitted, BernoulliNode)
+    assert np.isfinite(fitted.coefficients).all()
+    assert np.isfinite(fitted.predict_mean(bernoulli_data())).all()
 
 
 def test_bernoulli_sampling_uses_uniform_thresholds_and_generator_blocks() -> None:
