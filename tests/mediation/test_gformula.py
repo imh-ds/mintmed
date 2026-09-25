@@ -219,6 +219,28 @@ def test_one_gaussian_mediator_profiles_use_deterministic_hermite_quadrature():
         assert np.isfinite([means.mu_00, means.mu_10, means.mu_11]).all()
 
 
+def test_hermite_standardization_batches_participant_predictions(monkeypatch):
+    import mintmed.models as models
+    from mintmed.experiments.mediation_validation import generate_cell
+
+    fixture = generate_cell("cell09_spline_n250", 20260920)
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    calls: list[int] = []
+    real_transform = models.transform_design
+
+    def counting_transform(design, data):
+        calls.append(len(data))
+        return real_transform(design, data)
+
+    monkeypatch.setattr(models, "transform_design", counting_transform)
+
+    compute_regime_means(fixture.data, plan, fitted)
+
+    assert len(calls) <= 12
+    assert max(calls) >= len(fixture.data)
+
+
 def test_hermite_profile_bootstrap_refits_remain_complete():
     from dataclasses import replace
 
