@@ -1,0 +1,67 @@
+name: Mintmed verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_pilot:
+        description: "Run the Task 14 runtime pilot after the test suite"
+        required: true
+        type: boolean
+        default: false
+      pilot_repeats:
+        description: "Measured repeats for the optional runtime pilot"
+        required: true
+        type: string
+        default: "2"
+
+permissions:
+  contents: read
+
+env:
+  OMP_NUM_THREADS: "2"
+  OPENBLAS_NUM_THREADS: "2"
+  MKL_NUM_THREADS: "2"
+  NUMEXPR_NUM_THREADS: "2"
+
+jobs:
+  tests:
+    name: Python 3.11 test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run full test suite
+        run: python -m pytest -q
+
+  runtime-pilot:
+    name: Task 14 runtime pilot
+    if: ${{ inputs.run_pilot == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run runtime pilot
+        run: >
+          python scripts/run_runtime_pilot.py
+          --repeats "${{ inputs.pilot_repeats }}"
+          --output results/generated/runtime-pilot.json
+          --markdown results/generated/runtime-pilot.md
+      - name: Upload runtime-pilot evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-pilot-${{ github.run_id }}
+          path: results/generated/
+          if-no-files-found: warn
+          retention-days: 14
