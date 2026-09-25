@@ -5,7 +5,7 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 - Status: `blocked`.
 - Supported runtime: `>=3.11,<3.12`.
 - Source configuration: `configs/mediation_validation.yaml` (`2a86c29394f869921f17f6cafa1a89cfd1bf70b3a141f6129d8ecf45d5a4ea22`).
-- Git commit: `f89336f7bc8783162ec305d785fe1d96ea5d4430`.
+- Git commit: `8911b09f7ae0f17099a6220678e8cdc465701e5b`.
 
 ## Settings
 
@@ -30,11 +30,11 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 
 | Cell | N | Repeats | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |
 |---|---:|---:|---:|---:|---:|---|---|
-| `cell01_linear_n100` | 100 | 1 | 11.531 | 11.723 | 164315136 | complete | complete |
-| `cell02_linear_n250` | 250 | 1 | 12.328 | 12.521 | 165912576 | complete | complete |
-| `cell07_serial_three_n200` | 200 | 1 | 365.984 | 369.658 | 194330624 | complete | complete_with_warnings |
-| `cell09_spline_n250` | 250 | 1 | 29.578 | 29.359 | 464084992 | blocked | integration_unresolved |
-| `cell12_mixed_binary_serial_n250` | 250 | 1 | 84.062 | 84.429 | 431689728 | blocked | integration_unresolved |
+| `cell01_linear_n100` | 100 | 1 | 11.406 | 11.666 | 163782656 | complete | complete |
+| `cell02_linear_n250` | 250 | 1 | 12.266 | 12.425 | 165810176 | complete | complete |
+| `cell07_serial_three_n200` | 200 | 1 | 554.203 | 582.916 | 193593344 | complete | complete_with_warnings |
+| `cell09_spline_n250` | 250 | 1 | 50.672 | 55.201 | 464801792 | blocked | integration_unresolved |
+| `cell12_mixed_binary_serial_n250` | 250 | 1 | 121.641 | 128.049 | 431636480 | blocked | integration_unresolved |
 
 ## Locked-matrix forecast
 
