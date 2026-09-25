@@ -18,7 +18,7 @@ from .spec import CompiledNodePlan, Family, InteractionSpec, TermKind, TermSpec
 
 _PATSY_NAMESPACE = {
     "Q": patsy.builtins.Q,
-    "C": patsy.builtins.C,
+    "_mintmed_categorical": patsy.builtins.C,
     "I": patsy.builtins.I,
     "cr": patsy.builtins.cr,
 }
@@ -155,7 +155,7 @@ def _term_expression(
             rendered_levels = _render_levels(levels)
         except ValueError as exc:
             raise _FormulaConstructionError(str(exc), variable=variable) from exc
-        return f"C({quoted}, levels={rendered_levels})"
+        return f"_mintmed_categorical({quoted}, levels={rendered_levels})"
     raise _FormulaConstructionError(
         f"unsupported term kind for {variable!r}", variable=variable
     )

@@ -140,7 +140,7 @@ def test_structured_terms_render_declared_expressions() -> None:
 
     assert 'Q("linear")' in design.formula
     assert 'I(Q("quadratic") ** 2)' in design.formula
-    assert 'C(Q("condition"), levels=[0, 1])' in design.formula
+    assert '_mintmed_categorical(Q("condition"), levels=[0, 1])' in design.formula
     assert [term.variable for term in design.term_metadata] == [
         "linear",
         "quadratic",
@@ -211,7 +211,7 @@ def test_categorical_interaction_design_is_constructible() -> None:
 
     design = fit_design(data, node)
 
-    assert design.formula.count("C(") == 4
+    assert design.formula.count("_mintmed_categorical(") == 4
     assert sum(":" in column for column in design.columns) == 1
 
 
