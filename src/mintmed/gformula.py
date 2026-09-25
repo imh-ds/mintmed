@@ -478,7 +478,7 @@ def _fit_system_with_fixed_budget(
     fitted: list[FittedNode] = []
     for node_plan in plan.nodes:
         try:
-            fitted.append(fit_node(retained, node_plan))
+            fitted.append(fit_node(retained, node_plan, fast=True))
         except NodeFitError as exc:
             raise _node_fit_error(exc) from exc
     nodes = tuple(fitted)

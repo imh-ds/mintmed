@@ -15,7 +15,7 @@ from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
 from .design import FrozenDesign, fit_design, transform_design
 from .diagnostics import NodeFitError
-from .spec import CompiledNodePlan, Family
+from .spec import CompiledNodePlan, Family, TermKind
 from .types import AnalysisStatus, _freeze_mapping
 
 
@@ -566,11 +566,143 @@ class BernoulliNode(_NodeOperations):
         )
 
 
-def _fit_gaussian(
+def _can_use_fast_linear_fit(design: FrozenDesign) -> bool:
+    """Return whether a node has no basis state beyond numeric columns."""
+
+    return not design.interactions and all(
+        term.kind is TermKind.LINEAR for term in design.term_metadata
+    )
+
+
+def _fit_gaussian_numpy(
     response: np.ndarray,
     design: FrozenDesign,
 ) -> GaussianNode:
+    """Fit an all-linear Gaussian node with NumPy for bootstrap refits."""
+
+    try:
+        coefficients, _, rank, _ = np.linalg.lstsq(
+            design.matrix,
+            response,
+            rcond=None,
+        )
+    except (TypeError, ValueError, np.linalg.LinAlgError) as exc:
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="NumPy OLS could not produce a fit",
+            columns=design.columns,
+            details={"numpy_message": str(exc)},
+        ) from exc
+    if int(rank) != len(design.columns):
+        raise _node_error(
+            design,
+            code="rank_deficient",
+            message="NumPy OLS received a rank-deficient design",
+            columns=design.columns,
+        )
+
+    residuals = response - design.matrix @ coefficients
+    ssr = float(np.dot(residuals, residuals))
+    df_resid = float(len(response) - len(design.columns))
+    if not np.isfinite(ssr) or ssr < 0.0 or not np.isfinite(df_resid) or df_resid <= 0.0:
+        raise _node_error(
+            design,
+            code="invalid_residual_variance",
+            message="Gaussian residual variance has invalid residual degrees of freedom",
+            columns=design.columns,
+            details={"ssr": ssr, "df_resid": df_resid},
+        )
+    sigma_squared = ssr / df_resid
+    sigma = float(np.sqrt(sigma_squared))
+    if not np.isfinite(sigma_squared) or not np.isfinite(sigma) or sigma <= 0.0:
+        raise _node_error(
+            design,
+            code="invalid_residual_variance",
+            message="Gaussian residual variance must be finite and positive",
+            columns=design.columns,
+            details={
+                "ssr": ssr,
+                "df_resid": df_resid,
+                "sigma_squared": sigma_squared,
+            },
+        )
+    if coefficients.shape != (len(design.columns),) or not np.isfinite(coefficients).all():
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Gaussian fit contains nonfinite coefficients",
+            columns=design.columns,
+        )
+    n_rows = len(response)
+    log_likelihood = float(
+        -0.5
+        * n_rows
+        * (np.log(2.0 * np.pi) + 1.0 + np.log(ssr / n_rows))
+    )
+    if not np.isfinite(log_likelihood):
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Gaussian fit log likelihood is nonfinite",
+            columns=design.columns,
+            details={"log_likelihood": log_likelihood},
+        )
+    parameter_count = len(design.columns)
+    df_model = float(
+        parameter_count - 1
+        if design.columns and design.columns[0] == "Intercept"
+        else parameter_count
+    )
+    diagnostics = NodeFitDiagnostics(
+        response=design.response,
+        family=Family.GAUSSIAN,
+        status=AnalysisStatus.OK,
+        code="ok",
+        message=f"Gaussian OLS fit succeeded for {design.response}",
+        n_rows=design.n_rows,
+        rank=design.rank,
+        parameter_count=parameter_count,
+        converged=True,
+        coefficients_finite=True,
+        df_resid=df_resid,
+        sigma=sigma,
+        log_likelihood=log_likelihood,
+        deviance=None,
+        events=None,
+        non_events=None,
+        warnings=(),
+        metadata={
+            "formula": design.formula,
+            "ssr": ssr,
+            "df_model": df_model,
+            "aic": float(-2.0 * log_likelihood + 2.0 * parameter_count),
+            "bic": float(-2.0 * log_likelihood + np.log(n_rows) * parameter_count),
+            "solver": "numpy_lstsq",
+        },
+    )
+    return GaussianNode(
+        response=design.response,
+        family=Family.GAUSSIAN,
+        design=design,
+        coefficients=coefficients,
+        parameter_count=parameter_count,
+        sigma=sigma,
+        converged=True,
+        _fit_diagnostics=diagnostics,
+    )
+
+
+def _fit_gaussian(
+    response: np.ndarray,
+    design: FrozenDesign,
+    *,
+    fast: bool = False,
+) -> GaussianNode:
     """Fit and validate one Gaussian OLS result."""
+
+    if fast and _can_use_fast_linear_fit(design):
+        return _fit_gaussian_numpy(response, design)
 
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
@@ -716,11 +848,165 @@ def _separation_error(
     )
 
 
-def _fit_bernoulli(
+def _fit_bernoulli_numpy(
     response: np.ndarray,
     design: FrozenDesign,
 ) -> BernoulliNode:
+    """Fit an all-linear Bernoulli node with deterministic NumPy IRLS."""
+
+    matrix = design.matrix
+    coefficients = np.zeros(len(design.columns), dtype=float)
+    converged = False
+    iterations = 0
+    for iterations in range(1, 101):
+        probability = expit(matrix @ coefficients)
+        if not np.isfinite(probability).all():
+            raise _node_error(
+                design,
+                code="numerical_overflow",
+                message="Bernoulli fitted probabilities are nonfinite",
+                columns=design.columns,
+            )
+        weight = probability * (1.0 - probability)
+        if np.any(weight <= np.finfo(float).eps):
+            raise _separation_error(
+                design,
+                message="NumPy IRLS reached saturated fitted probabilities",
+                warning_text=(),
+            )
+        working_response = matrix @ coefficients + (response - probability) / weight
+        weighted_matrix = matrix * np.sqrt(weight)[:, None]
+        weighted_response = working_response * np.sqrt(weight)
+        try:
+            updated, _, rank, _ = np.linalg.lstsq(
+                weighted_matrix,
+                weighted_response,
+                rcond=None,
+            )
+        except (TypeError, ValueError, np.linalg.LinAlgError) as exc:
+            raise _node_error(
+                design,
+                code="numerical_overflow",
+                message="NumPy IRLS could not produce a fit",
+                columns=design.columns,
+                details={"numpy_message": str(exc)},
+            ) from exc
+        if int(rank) != len(design.columns):
+            raise _node_error(
+                design,
+                code="rank_deficient",
+                message="NumPy IRLS received a rank-deficient design",
+                columns=design.columns,
+            )
+        if not np.isfinite(updated).all():
+            raise _node_error(
+                design,
+                code="numerical_overflow",
+                message="Bernoulli fit contains nonfinite coefficients",
+                columns=design.columns,
+            )
+        change = float(np.max(np.abs(updated - coefficients)))
+        coefficients = updated
+        if change <= 1.0e-8 * (1.0 + float(np.max(np.abs(coefficients)))):
+            converged = True
+            break
+
+    if not converged:
+        raise _node_error(
+            design,
+            code="nonconvergence",
+            message="NumPy IRLS did not converge",
+            columns=design.columns,
+            details={
+                "converged": False,
+                "iterations": iterations,
+                "statsmodels_message": "NumPy IRLS reached its iteration limit",
+            },
+        )
+
+    probability = expit(matrix @ coefficients)
+    if (
+        not np.isfinite(probability).all()
+        or np.any(probability <= 0.0)
+        or np.any(probability >= 1.0)
+    ):
+        raise _separation_error(
+            design,
+            message="NumPy IRLS produced saturated fitted probabilities",
+            warning_text=(),
+        )
+    safe_probability = np.clip(
+        probability,
+        np.finfo(float).eps,
+        1.0 - np.finfo(float).eps,
+    )
+    log_likelihood = float(
+        np.sum(
+            response * np.log(safe_probability)
+            + (1.0 - response) * np.log1p(-safe_probability)
+        )
+    )
+    deviance = float(-2.0 * log_likelihood)
+    covariance = np.linalg.pinv(
+        matrix.T @ (matrix * (probability * (1.0 - probability))[:, None])
+    )
+    if (
+        not np.isfinite(coefficients).all()
+        or not np.isfinite(covariance).all()
+        or not np.isfinite(log_likelihood)
+        or not np.isfinite(deviance)
+    ):
+        raise _node_error(
+            design,
+            code="numerical_overflow",
+            message="Bernoulli fit contains nonfinite diagnostics",
+            columns=design.columns,
+        )
+    diagnostics = NodeFitDiagnostics(
+        response=design.response,
+        family=Family.BERNOULLI,
+        status=AnalysisStatus.OK,
+        code="ok",
+        message=f"Bernoulli GLM fit succeeded for {design.response}",
+        n_rows=design.n_rows,
+        rank=design.rank,
+        parameter_count=len(design.columns),
+        converged=True,
+        coefficients_finite=True,
+        df_resid=None,
+        sigma=None,
+        log_likelihood=log_likelihood,
+        deviance=deviance,
+        events=int(response.sum()),
+        non_events=int(response.size - response.sum()),
+        warnings=(),
+        metadata={
+            "formula": design.formula,
+            "iterations": iterations,
+            "solver": "numpy_irls",
+        },
+    )
+    return BernoulliNode(
+        response=design.response,
+        family=Family.BERNOULLI,
+        design=design,
+        coefficients=coefficients,
+        parameter_count=len(design.columns),
+        converged=True,
+        _fit_diagnostics=diagnostics,
+    )
+
+
+def _fit_bernoulli(
+    response: np.ndarray,
+    design: FrozenDesign,
+    *,
+    fast: bool = False,
+) -> BernoulliNode:
     """Fit and validate one Bernoulli Binomial GLM result."""
+
+    if fast and _can_use_fast_linear_fit(design):
+        return _fit_bernoulli_numpy(response, design)
 
     events = int(response.sum())
     non_events = int(response.size - events)
@@ -891,14 +1177,19 @@ def _fit_bernoulli(
     )
 
 
-def fit_node(data: pd.DataFrame, node: CompiledNodePlan) -> FittedNode:
+def fit_node(
+    data: pd.DataFrame,
+    node: CompiledNodePlan,
+    *,
+    fast: bool = False,
+) -> FittedNode:
     """Fit one compiled Gaussian or Bernoulli conditional node."""
 
     response, design = _fit_frozen_design(data, node)
     if node.family is Family.GAUSSIAN:
-        return _fit_gaussian(response, design)
+        return _fit_gaussian(response, design, fast=fast)
     if node.family is Family.BERNOULLI:
-        return _fit_bernoulli(response, design)
+        return _fit_bernoulli(response, design, fast=fast)
     raise _node_error(
         node,
         code="unsupported_family",
