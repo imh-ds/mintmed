@@ -287,6 +287,28 @@ def test_hermite_profile_bootstrap_refits_remain_complete():
     assert result.bootstrap.failed == 0
 
 
+def test_hermite_linear_standardization_does_not_transform_patsy_designs(monkeypatch):
+    import mintmed.models as models
+    from mintmed.experiments.mediation_validation import generate_cell
+    from mintmed.gformula import compute_regime_means, fit_system
+
+    fixture = generate_cell("cell12_mixed_binary_serial_n250", 20260920)
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    calls = 0
+
+    def fail_transform(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("linear Hermite standardization must use numeric matrices")
+
+    monkeypatch.setattr(models, "transform_design", fail_transform)
+
+    compute_regime_means(fixture.data, plan, fitted)
+
+    assert calls == 0
+
+
 def test_gaussian_linear_anchor_is_exact_and_deterministic():
     fixture, plan, fitted = _fit("linear", 100)
     from mintmed.gformula import compute_regime_means
