@@ -48,9 +48,7 @@ def _format_spec_error(error: SpecValidationError) -> str:
     return f"{error.code} at {error.path}: {error.message}"
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Run one analysis and return a stable process exit code."""
-
+def _main_impl(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     data_path, spec_path, output_dir = _required_paths(args)
@@ -82,6 +80,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     print(f"mintmed: analysis status {overall_status}; see analysis.json for diagnostics", file=sys.stderr)
     return 1
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run one analysis and return a stable process exit code."""
+
+    try:
+        return _main_impl(argv)
+    except SystemExit as error:
+        if isinstance(error.code, int):
+            return error.code
+        raise
 
 
 if __name__ == "__main__":
