@@ -527,3 +527,83 @@ def test_bootstrap_refit_matches_point_fit_on_identical_rows():
     refit = _fit_system_with_fixed_budget(fixture.data, plan, draw_seed=1, draw_budget=0)
     for original, repeated in zip(fit_system(fixture.data, plan).nodes, refit.nodes, strict=True):
         np.testing.assert_array_equal(original.coefficients, repeated.coefficients)
+
+
+def _moderated_point(bootstrap: int = 2):
+    fixture = sample_fixture("moderated_serial", 120, np.random.default_rng(20261011))
+    spec = replace(
+        fixture.spec,
+        computation=replace(fixture.spec.computation, bootstrap=bootstrap, integration_tolerance=1.0),
+    )
+    plan = estimate_plan(fixture.data, spec)
+    fitted = fit_system(fixture.data, plan)
+    means = compute_regime_means(fixture.data, plan, fitted)
+    point = PointAnalysis(
+        fitted_system=fitted,
+        regime_means=means,
+        effects=natural_effects(means),
+        moderator_contrasts=moderator_contrasts(
+            fixture.data, plan, fitted, fitted.draws, moderator_values={"W": (0.0, 1.0)}
+        ),
+        draw_budget=fitted.draw_budget,
+        metadata={"bootstrap_mode": "quick_diagnostic"},
+    )
+    return fixture, plan, point
+
+
+def test_moderator_failure_is_optional_and_keeps_primary_intervals(monkeypatch):
+    import mintmed.uncertainty as uncertainty
+    from mintmed.gformula import GFormulaError
+
+    fixture, plan, point = _moderated_point()
+
+    def unsupported(*_args, **_kwargs):
+        raise GFormulaError(
+            code="unsupported_extrapolation",
+            status=AnalysisStatus.UNSUPPORTED,
+            message="resample lacks the baseline moderator level",
+        )
+
+    monkeypatch.setattr(uncertainty, "moderator_contrasts", unsupported)
+    result = uncertainty.bootstrap_analysis(fixture.data, plan, point)
+
+    assert result.successful == 2
+    assert result.failed == 0
+    assert all(record["status"] == "ok" for record in result.replicates)
+    assert all(record["moderator_available"] is False for record in result.replicates)
+    assert all(record["moderator_reason_code"] == "unsupported_extrapolation" for record in result.replicates)
+    intervals = {interval.name: interval for interval in result.intervals}
+    assert all(intervals[name].interval_available for name in ("TE", "PNDE", "TNIE"))
+    difference = intervals["moderator_difference__W__1__TNIE"]
+    assert difference.interval_available is False
+    assert difference.reason == "optional_output_unavailable"
+    assert result.status is AnalysisStatus.WARNING
+
+
+def test_optional_output_missing_in_some_replicates_is_withheld(monkeypatch):
+    import mintmed.uncertainty as uncertainty
+    from mintmed.gformula import GFormulaError
+
+    fixture, plan, point = _moderated_point(bootstrap=3)
+    real = uncertainty.moderator_contrasts
+    calls = {"count": 0}
+
+    def fail_first(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise GFormulaError(
+                code="unsupported_extrapolation",
+                status=AnalysisStatus.UNSUPPORTED,
+                message="resample lacks the baseline moderator level",
+            )
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(uncertainty, "moderator_contrasts", fail_first)
+    result = uncertainty.bootstrap_analysis(fixture.data, plan, point)
+
+    assert result.successful == 3
+    assert [record["moderator_available"] for record in result.replicates] == [False, True, True]
+    intervals = {interval.name: interval for interval in result.intervals}
+    assert intervals["TE"].interval_available is True
+    assert intervals["moderator_difference__W__1__TNIE"].interval_available is False
+    assert intervals["moderator_difference__W__1__TNIE"].reason == "optional_output_unavailable"
