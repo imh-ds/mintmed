@@ -391,6 +391,31 @@ Each task entry should record:
 - **Verification:** Full suite `358 passed` under the supported Python 3.11.9 `.venv`.
 - **Follow-up:** The runtime margin is now about 1.1 CPU-hours, measured locally on Windows. Re-run the pilot on GitHub Actions before Task 15. Any further bootstrap cost (for example from BUG-12) must be re-forecast.
 
+#### Tasks 10/12 correction — provisional quick-diagnostic intervals and a standard-mode minimum (audit BUG-05)
+
+- **Date:** 2026-09-25
+- **Task:** Task 10 (bootstrap interval rule) and Task 12 (reports and examples); correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-05).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  1. A `quick_diagnostic` run labels **every** interval provisional (`WARNING`, `quick_diagnostic_provisional`) whenever at least two replicates succeed, whether or not the ordinary success/failure rule holds.
+  2. A `standard` run that requests fewer than `MIN_STANDARD_BOOTSTRAP = 200` replicates withholds all intervals (`INTERVAL_UNAVAILABLE`, new reason `bootstrap_too_few_replicates`) and keeps the point estimates. At 200 or more, the existing ordinary rule applies unchanged.
+  3. Reports label the interval columns "95% interval (provisional)" for quick-diagnostic runs and explain withheld intervals. `bootstrap.metadata` records `minimum_standard_replicates`.
+- **Rationale:**
+  - Task 12 requires quick-diagnostic runs to be labelled provisional "rather than presenting them as inferential evidence". The Task 10 code only applied the label when the ordinary rule failed. So a quick-diagnostic run in which every replicate succeeded was exported as `status: ok`. The audit reproduced this with `examples/serial_moderated`: the TE interval came from two refits and did not contain the point estimate.
+  - Task 10 also said that standard runs with 2–399 replicates may not use the provisional escape hatch. Before this change, however, they still produced "ok" 2.5/97.5 percentiles from as few as two values.
+  - The 200-replicate minimum is the smallest count that leaves five replicates in each 2.5% tail. It is well below the validation's 399 and the default 999, so no release or validation run is affected.
+  - Withholding intervals was chosen over a `WARNING` status so that Task 10's rule stays intact: only `quick_diagnostic` may produce provisional intervals.
+  - If 200 is judged too lax, raising the constant is a one-line change covered by the parametrized tests.
+- **Actions:** Red contracts in `dbf871b`. Implementation in `b545b73` (`src/mintmed/uncertainty.py`, `src/mintmed/report.py`).
+- **Evidence:**
+  - Re-running `examples/serial_moderated` through the CLI now exports each interval with `status=warning` and `reason=quick_diagnostic_provisional`. The Markdown columns read "95% interval (provisional)".
+  - A standard-mode API run with `bootstrap=2` returns `INTERVAL_UNAVAILABLE` with reason `bootstrap_too_few_replicates`, overall `point_only`, and point estimates retained.
+  - Runtime is unaffected, because only interval labelling changed. The validation smoke config already uses `quick_diagnostic`, and its intervals remain available to the metric extraction.
+- **Files:** `src/mintmed/uncertainty.py`; `src/mintmed/report.py`; `tests/mediation/test_uncertainty.py`; `tests/mediation/test_analysis.py`; `tests/mediation/test_report.py`; this decision log.
+- **Verification:** Full suite `368 passed` under the supported Python 3.11.9 `.venv`.
+- **Follow-up:** Standard-mode results with too few replicates currently map to overall `point_only`, following the existing `INTERVAL_UNAVAILABLE` precedence. Whether that state should be named more explicitly belongs to BUG-22 (overall-state precedence). The examples' `bootstrap: 2` settings are addressed separately under BUG-17.
+
 ## Reusable entry template
 
 ### Task NN — Name
