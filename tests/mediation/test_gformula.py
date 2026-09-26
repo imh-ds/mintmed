@@ -546,3 +546,78 @@ def test_binary_enumeration_uses_one_outcome_transform_per_regime(monkeypatch):
     # Two branch tables x two mediators, plus one batched outcome transform,
     # instead of per-participant, per-state predictions.
     assert calls <= 5
+
+
+def _linear_parallel_plan(n: int = 300):
+    fixture = sample_fixture("parallel_correlated", n, np.random.default_rng(20260926))
+    outcome = replace(fixture.spec.nodes[-1], interactions=())
+    spec = replace(fixture.spec, nodes=(*fixture.spec.nodes[:-1], outcome))
+    return fixture, spec, estimate_plan(fixture.data, spec)
+
+
+@pytest.mark.parametrize("fixture_name", ["serial_two", "serial_three", "linear"])
+def test_exact_linear_path_covers_any_all_linear_gaussian_system(fixture_name: str) -> None:
+    from mintmed.gformula import fit_system
+
+    fixture = sample_fixture(fixture_name, 200, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+
+    assert fit_system(fixture.data, plan).integration_method == "gaussian_linear_exact"
+
+
+def test_exact_linear_path_covers_correlated_parallel_mediators() -> None:
+    from mintmed.gformula import fit_system
+
+    fixture, _spec, plan = _linear_parallel_plan()
+
+    assert fit_system(fixture.data, plan).integration_method == "gaussian_linear_exact"
+
+
+def test_exact_linear_means_match_a_large_sobol_evaluation() -> None:
+    from mintmed.gformula import CommonDraws, _compute_means_with_system, compute_regime_means, fit_system
+
+    fixture, _spec, plan = _linear_parallel_plan()
+    exact_system = fit_system(fixture.data, plan)
+    exact = compute_regime_means(fixture.data, plan, exact_system)
+    draws = CommonDraws.from_seed(seed=11, draw_count=4096, mediator_count=2)
+    sobol_system = replace(exact_system, integration_method="sobol_blocked", draws=draws, draw_budget=4096)
+    sobol = _compute_means_with_system(fixture.data, sobol_system, draws)
+
+    np.testing.assert_allclose(
+        [exact.mu_00, exact.mu_10, exact.mu_11],
+        [sobol.mu_00, sobol.mu_10, sobol.mu_11],
+        atol=2e-3,
+    )
+
+
+def test_hermite_path_measures_its_accuracy_against_a_lower_order() -> None:
+    from mintmed.gformula import fit_system
+
+    fixture = sample_fixture("quadratic_b", 200, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    diagnostics = fitted.integration_diagnostics
+
+    assert fitted.integration_method == "gauss_hermite"
+    assert fitted.status is AnalysisStatus.OK
+    assert diagnostics["check_order"] == 32
+    assert diagnostics["hermite_order_delta"] <= diagnostics["absolute_tolerance"]
+    assert diagnostics["tolerance_scale"] == "outcome_sd"
+    assert diagnostics["status"] == "ok"
+
+
+def test_hermite_path_fails_when_orders_disagree(monkeypatch) -> None:
+    import mintmed.gformula as gformula
+
+    monkeypatch.setattr(gformula, "_GAUSS_HERMITE_CHECK_ORDER", 1)
+    fixture = sample_fixture("quadratic_b", 200, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = gformula.fit_system(fixture.data, plan)
+
+    assert fitted.integration_method == "gauss_hermite"
+    assert fitted.status is AnalysisStatus.INTEGRATION_FAILED
+    assert fitted.integration_diagnostics["status"] == "integration_failed"
+    assert fitted.integration_diagnostics["hermite_order_delta"] > fitted.integration_diagnostics["absolute_tolerance"]
+    assert any(issue.code == "integration_unresolved" for issue in fitted.issues)
+    with pytest.raises(gformula.GFormulaError):
+        gformula.compute_regime_means(fixture.data, plan, fitted)
