@@ -4,14 +4,13 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 
 - Status: `pass`.
 - Supported runtime: `>=3.11,<3.12`.
-- Source configuration: `configs/mediation_validation.yaml` (`2a86c29394f869921f17f6cafa1a89cfd1bf70b3a141f6129d8ecf45d5a4ea22`).
-- Git commit: `b80aeb3e6f6b53e0667c67e717c23da67a6d97b7`.
-- GitHub Actions run: `36196715109`.
+- Source configuration: `configs/mediation_validation.yaml` (`176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94`).
+- Git commit: `fee1fc4351971f658f519676b8d072cdddcdce3b`.
 
 ## Settings
 
 - Pilot repeats: `2`; bootstrap replicates per case: `399`.
-- Integration draws: `256`; tolerance: `1e-08`.
+- Integration draws: `256`; tolerance: `0.001`.
 - Targeted-rerun allowance: `0.05`; CPU ceiling: `12.0` hours.
 
 ## Environment
@@ -22,42 +21,54 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 | `numpy` | `2.4.6` |
 | `pandas` | `3.0.6` |
 | `patsy` | `1.0.3` |
-| `platform` | `Linux-6.17.0-1022-azure-x86_64-with-glibc2.39` |
-| `python` | `3.11.16` |
+| `platform` | `Windows-10-10.0.26200-SP0` |
+| `python` | `3.11.9` |
 | `scipy` | `1.17.1` |
 | `statsmodels` | `0.14.6` |
 
 ## Measured cases
 
-| Cell | N | Repeats | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |
-|---|---:|---:|---:|---:|---:|---|---|
-| `cell01_linear_n100` | 100 | 2 | 3.668 | 3.668 | 180072448 | complete | complete |
-| `cell02_linear_n250` | 250 | 2 | 4.227 | 4.228 | 181907456 | complete | complete |
-| `cell07_serial_three_n200` | 200 | 2 | 6.546 | 6.547 | 181493760 | complete | complete_with_warnings |
-| `cell09_spline_n250` | 250 | 2 | 39.080 | 19.693 | 202051584 | complete | complete_with_warnings |
-| `cell12_mixed_binary_serial_n250` | 250 | 2 | 12.163 | 6.217 | 196091904 | complete | complete_with_warnings |
-
-All five pilot cases completed. The warning statuses are nonblocking diagnostic warnings; no case was integration-blocked or incomplete.
+| Cell | N | Repeats | Integration | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |
+|---|---:|---:|---|---:|---:|---:|---|---|
+| `cell01_linear_n100` | 100 | 2 | gaussian_linear_exact | 4.117 | 4.192 | 165105664 | complete | complete |
+| `cell02_linear_n250` | 250 | 2 | gaussian_linear_exact | 4.477 | 4.525 | 167030784 | complete | complete |
+| `cell03_no_a_to_m_n100` | 100 | 2 | gaussian_linear_exact | 3.766 | 3.853 | 165126144 | complete | complete |
+| `cell04_no_m_to_y_n100` | 100 | 2 | gaussian_linear_exact | 4.039 | 4.063 | 164167680 | complete | complete |
+| `cell05_no_mediation_n100` | 100 | 2 | gaussian_linear_exact | 3.875 | 3.936 | 164560896 | complete | complete |
+| `cell06_parallel_interaction_n150` | 150 | 2 | sobol_blocked | 27.609 | 27.695 | 182489088 | complete | complete_with_warnings |
+| `cell07_serial_three_n200` | 200 | 2 | gaussian_linear_exact | 7.156 | 7.256 | 166576128 | complete | complete_with_warnings |
+| `cell08_quadratic_n100` | 100 | 2 | gauss_hermite | 9.242 | 9.330 | 165285888 | complete | complete |
+| `cell09_spline_n250` | 250 | 2 | gauss_hermite | 15.703 | 15.960 | 176005120 | complete | complete |
+| `cell10_moderated_n150` | 150 | 2 | sobol_blocked | 68.258 | 68.768 | 182280192 | complete | complete |
+| `cell11_binary_mediator_n150` | 150 | 2 | exact_binary_mediators | 5.492 | 5.539 | 166146048 | complete | complete |
+| `cell12_mixed_binary_serial_n250` | 250 | 2 | gauss_hermite | 10.578 | 10.666 | 179298304 | complete | complete_with_warnings |
 
 ## Locked-matrix forecast
 
 - Point fits: `2400`.
 - Bootstrap refits: `957600`.
 - Complete analyses: `960000`.
-- Base CPU seconds: `29327.748`.
-- Projected CPU seconds including reruns: `30794.136`.
-- Projected CPU hours: `8.554`; budget pass: `True`.
+- Base CPU seconds: `32862.500`.
+- Projected CPU seconds including reruns: `34505.625`.
+- Projected CPU hours: `9.585`; budget pass: `True`.
 
-The forecast uses the declared conservative proxy map and includes point fits, attempted bootstrap refits, serialization, and the 5% targeted-rerun allowance. This is a runtime boundary, not statistical validation.
+Every locked matrix cell is measured directly (no proxy cells), so each cell is forecast from its own integration path. The forecast includes point fits, attempted bootstrap refits, failures, serialization, and the 5% targeted-rerun allowance. A blocked case blocks the forecast; a passing forecast is a runtime boundary, not statistical validation.
 
 ## Proxy map
 
-- `cell01_linear_n100` forecasts: `cell01_linear_n100`, `cell03_no_a_to_m_n100`, `cell04_no_m_to_y_n100`, `cell05_no_mediation_n100`.
+- `cell01_linear_n100` forecasts: `cell01_linear_n100`.
 - `cell02_linear_n250` forecasts: `cell02_linear_n250`.
-- `cell07_serial_three_n200` forecasts: `cell06_parallel_interaction_n150`, `cell07_serial_three_n200`.
-- `cell09_spline_n250` forecasts: `cell08_quadratic_n100`, `cell09_spline_n250`.
-- `cell12_mixed_binary_serial_n250` forecasts: `cell10_moderated_n150`, `cell11_binary_mediator_n150`, `cell12_mixed_binary_serial_n250`.
+- `cell03_no_a_to_m_n100` forecasts: `cell03_no_a_to_m_n100`.
+- `cell04_no_m_to_y_n100` forecasts: `cell04_no_m_to_y_n100`.
+- `cell05_no_mediation_n100` forecasts: `cell05_no_mediation_n100`.
+- `cell06_parallel_interaction_n150` forecasts: `cell06_parallel_interaction_n150`.
+- `cell07_serial_three_n200` forecasts: `cell07_serial_three_n200`.
+- `cell08_quadratic_n100` forecasts: `cell08_quadratic_n100`.
+- `cell09_spline_n250` forecasts: `cell09_spline_n250`.
+- `cell10_moderated_n150` forecasts: `cell10_moderated_n150`.
+- `cell11_binary_mediator_n150` forecasts: `cell11_binary_mediator_n150`.
+- `cell12_mixed_binary_serial_n250` forecasts: `cell12_mixed_binary_serial_n250`.
 
 ## Handoff
 
-Task 14 runtime acceptance is complete for the locked methodology boundary. Task 15 remains deferred and may freeze the release charter using this report, the raw JSON artifact, the reference-agreement record, and supported-runtime verification.
+Task 15 may freeze the release charter only after this report, the raw JSON, the reference-agreement record, and supported-runtime verification agree on the configuration, seeds, fit counts, and runtime boundary.

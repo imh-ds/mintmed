@@ -359,6 +359,24 @@ Each task entry should record:
 - **Verification:** Focused BUG-02 tests (4) passed; full suite `349 passed`.
 - **Follow-up:** `docs/validation/runtime_pilot.md` still records the old configuration hash and tolerance. Re-run the runtime pilot with Sobol-path cells (audit BUG-03) before any Task 14 or Task 15 claim.
 
+#### Task 14 correction — full-matrix runtime pilot and bounded optimizations (audit BUG-03)
+
+- **Date:** 2026-09-25
+- **Task:** Task 14 — runtime acceptance; correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-03).
+- **Status:** Runtime forecast re-established: `pass`, 9.585 projected CPU-hours against the 12-hour ceiling. Task 14 statistical and validation acceptance still depends on the other open audit items (BUG-06, BUG-07 and later).
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:** Replace the five-case proxy pilot with direct measurement of all twelve locked matrix cells. This departs from the Task 14 plan's fixed five-case list: after the Task 14 fast paths, no proxy exercised the Sobol path, so cells 06 and 10 (Sobol) and cell 11 (exact binary enumeration) were forecast from far cheaper proxies. Apply only bounded, result-preserving optimizations, as the Task 14 stopping rule allows.
+- **Rationale:** With proxies, the checked-in forecast (8.554 h) was invalid. The first honest full-matrix pilot (commit `09a489c`) forecast **27.459 CPU-hours** (`over_budget`), dominated by cell 11 (223 CPU-s per dataset), cell 10 (132 s) and cell 06 (42 s). Profiling showed three avoidable costs, each removed without changing any estimate:
+  - a per-row Python frozen-category check on participant × draw frames, about 97% of Sobol-path CPU (`3231362`);
+  - per-participant `iterrows` binary enumeration, replaced by the shared exact branch table and pinned to a row-wise reference at `1e-12` (`3c1f7ac`);
+  - duplicate moderator regime evaluations, reused per configuration with bit-identical results (`fee1fc4`).
+  After these changes: cell 11 5.5 s, cell 10 68.3 s, cell 06 27.6 s per dataset.
+- **Actions:** `09a489c` measures every cell, records each cell's integration method in the forecast and report, and sets the worker timeout to `max_seconds + 900`. The three `perf:` commits are listed above. The pilot was re-run (`--repeats 2`) and `docs/validation/runtime_pilot.md` regenerated.
+- **Evidence:** The final pilot on `fee1fc4` completed all 12 cells × 2 repeats × 399 bootstrap refits with no incomplete or integration-unresolved case. Base CPU is 32,862.5 s; with the 5% rerun allowance, 34,505.6 s = **9.585 CPU-hours**. Source config hash: `176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94`.
+- **Files:** `scripts/run_runtime_pilot.py`; `src/mintmed/design.py`; `src/mintmed/gformula.py`; `src/mintmed/effects.py`; `src/mintmed/api.py`; `src/mintmed/uncertainty.py`; tests; `docs/validation/runtime_pilot.md`; this decision log.
+- **Verification:** Full suite `355 passed` under the supported Python 3.11.9 `.venv`. The pilot was run locally on Windows (`platform` recorded in the report). The earlier authoritative pilot ran in GitHub Actions on Linux, and per-cell CPU times may differ there; re-running the pilot via `workflow_dispatch` is recommended before Task 15.
+- **Follow-up:** The margin is 2.4 h, and cell 10 alone accounts for about 40% of the forecast. Any later change to fitting or integration must re-run the full-matrix pilot.
+
 ## Reusable entry template
 
 ### Task NN — Name
