@@ -14,7 +14,7 @@ from mintmed.effects import (
 )
 from mintmed.gformula import CommonDraws, compute_regime_means, fit_system
 from mintmed.simulation import sample_fixture
-from mintmed.spec import estimate_plan
+from mintmed.spec import Family, estimate_plan
 from mintmed.types import AnalysisStatus, RegimeMeans
 
 
@@ -238,3 +238,119 @@ def test_parallel_contributions_refuse_non_gaussian_outcome():
     assert result.available is False
     assert result.contributions == {}
     assert result.reason_code == "contribution_outcome_family"
+
+
+# BUG-01 regression contracts: additive contributions must be evaluated with
+# the same integrator as the joint TNIE, never with placeholder draws.
+_NON_SOBOL_SINGLE_MEDIATOR_CASES = (
+    ("linear", "gaussian_linear_exact"),
+    ("quadratic_b", "gauss_hermite"),
+    ("binary_mediator_gaussian_outcome", "exact_binary_mediators"),
+)
+
+
+@pytest.mark.parametrize("tolerance", (1e-8, 1.0))
+@pytest.mark.parametrize(("name", "method"), _NON_SOBOL_SINGLE_MEDIATOR_CASES)
+def test_single_mediator_contribution_equals_joint_tnie_on_exact_paths(name, method, tolerance):
+    fixture, plan, fitted = _fit_fixture(name, tolerance=tolerance)
+    assert fitted.integration_method == method
+    assert fitted.draws is None
+    means = compute_regime_means(fixture.data, plan, fitted)
+    result = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        fitted.draws,
+        means.total_natural_indirect_effect,
+    )
+    assert result.available is True, result.reason
+    assert tuple(result.contributions) == ("TNIE_M",)
+    assert result.contributions["TNIE_M"].estimate == pytest.approx(
+        means.total_natural_indirect_effect,
+        abs=1e-10,
+    )
+    assert result.contributions["TNIE_M"].metadata["integration_method"] == method
+
+
+def _parallel_binary_mediators_gaussian_outcome():
+    fixture, plan, _ = _parallel_binary_outcome_fixture()
+    spec = fixture.spec
+    m2 = replace(
+        spec.nodes[1],
+        terms=tuple(term for term in spec.nodes[1].terms if term.variable == "A"),
+    )
+    edges = tuple(edge for edge in spec.scientific.edges if edge != ("M1", "M2"))
+    outcome_variable = replace(spec.outcome, observed_type="continuous", family=Family.GAUSSIAN, levels=())
+    outcome_node = replace(spec.nodes[2], family=Family.GAUSSIAN)
+    spec = replace(
+        spec,
+        outcome=outcome_variable,
+        nodes=(spec.nodes[0], m2, outcome_node),
+        scientific=replace(spec.scientific, edges=edges, arrangement="parallel"),
+    )
+    plan = estimate_plan(fixture.data, spec)
+    return fixture, plan, fit_system(fixture.data, plan)
+
+
+def test_exact_binary_parallel_contributions_match_closed_form():
+    fixture, plan, fitted = _parallel_binary_mediators_gaussian_outcome()
+    assert fitted.integration_method == "exact_binary_mediators"
+    means = compute_regime_means(fixture.data, plan, fitted)
+    result = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        fitted.draws,
+        means.total_natural_indirect_effect,
+    )
+    assert result.available is True, result.reason
+
+    # Linear outcome: contribution_j = beta_j * standardized change in P(Mj = 1).
+    outcome = fitted.outcome_node
+    beta = dict(zip(outcome.design.columns, outcome.coefficients))
+    frame = fixture.data.loc[list(plan.retained_row_indices)]
+    for name in ("M1", "M2"):
+        node = fitted.node_by_response[name]
+        shift = np.mean(node.predict_mean(frame.assign(A=1.0))) - np.mean(
+            node.predict_mean(frame.assign(A=0.0))
+        )
+        expected = beta[f'Q("{name}")'] * shift
+        assert result.contributions[f"TNIE_{name}"].estimate == pytest.approx(expected, abs=1e-10)
+    assert sum(effect.estimate for effect in result.contributions.values()) == pytest.approx(
+        means.total_natural_indirect_effect,
+        abs=1e-10,
+    )
+
+
+def test_sobol_contributions_still_require_the_accepted_draws():
+    fixture, plan, fitted = _additive_parallel_fixture()
+    means = compute_regime_means(fixture.data, plan, fitted)
+    result = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        CommonDraws.from_seed(seed=3, draw_count=1, mediator_count=2),
+        means.total_natural_indirect_effect,
+    )
+    assert result.available is False
+    assert result.reason_code == "contribution_integration_unresolved"
+
+
+def test_placeholder_draws_cannot_change_exact_path_contributions():
+    # Reproduces the audited failure: a one-draw placeholder and a loose
+    # tolerance previously published a single-draw value as a contribution.
+    fixture, plan, fitted = _fit_fixture("quadratic_b", tolerance=1.0)
+    assert fitted.integration_method == "gauss_hermite"
+    means = compute_regime_means(fixture.data, plan, fitted)
+    result = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        CommonDraws.from_seed(seed=17, draw_count=1, mediator_count=1),
+        means.total_natural_indirect_effect,
+    )
+    assert result.available is True, result.reason
+    assert result.contributions["TNIE_M"].estimate == pytest.approx(
+        means.total_natural_indirect_effect,
+        abs=1e-10,
+    )
