@@ -1097,6 +1097,7 @@ def _validate_model(spec: ModelSpec) -> None:
         *((spec.participant_id,) if spec.participant_id is not None else ()),
     )
     _validate_graph(spec.scientific.edges, all_variables)
+    _validate_edge_consistency(spec)
     if len(spec.nodes) != len(spec.mediators) + 1:
         _fail("invalid_model_nodes", "models", "models must contain exactly all mediators and the outcome")
     node_names = tuple(node.response for node in spec.nodes)
@@ -1255,6 +1256,51 @@ def _validate_graph(edges: Sequence[tuple[str, str]], variables: Sequence[Variab
                 queue.append(target)
     if visited != len(names):
         _fail("cyclic_graph", "scientific_edges", "scientific graph must be acyclic")
+
+
+def _validate_edge_consistency(spec: ModelSpec) -> None:
+    """Require scientific edges to be representable by the declared factorization."""
+
+    order = {name: index for index, name in enumerate(spec.scientific.mediator_order)}
+    participant = spec.participant_id.name if spec.participant_id is not None else None
+    for index, (source, target) in enumerate(spec.scientific.edges):
+        path = f"scientific_edges[{index}]"
+        if participant is not None and participant in (source, target):
+            _fail("invalid_edge_endpoint", path, "participant_id cannot be a scientific edge endpoint")
+        if source in order and target in order:
+            if spec.scientific.arrangement == "parallel":
+                _fail(
+                    "parallel_mediator_edge",
+                    path,
+                    "a parallel arrangement cannot declare mediator-to-mediator edges",
+                )
+            if order[source] > order[target]:
+                _fail(
+                    "edge_order_conflict",
+                    path,
+                    f"edge {source} -> {target} contradicts mediator_order; {target}'s node cannot use {source}",
+                )
+
+
+def _edge_term_issues(spec: ModelSpec) -> list[Issue]:
+    """Warn for each scientific edge whose source is not a term on its target node."""
+
+    nodes = spec.node_by_response
+    issues: list[Issue] = []
+    for index, (source, target) in enumerate(spec.scientific.edges):
+        node = nodes.get(target)
+        if node is None or any(term.variable == source for term in node.terms):
+            continue
+        issues.append(
+            Issue(
+                code="edge_without_term",
+                message=f"scientific edge {source} -> {target} has no {source} term on the {target} node",
+                status=AnalysisStatus.WARNING,
+                node=target,
+                path=f"scientific_edges[{index}]",
+            )
+        )
+    return issues
 
 
 def _validate_contrast(contrast: ContrastSpec, exposure: VariableSpec, moderators: Sequence[VariableSpec]) -> None:
@@ -1605,6 +1651,7 @@ def _build_issues(
                     node=response,
                 )
             )
+    issues.extend(_edge_term_issues(spec))
     if len(data) < 100:
         issues.append(
             Issue(
