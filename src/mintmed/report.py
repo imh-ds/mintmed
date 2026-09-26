@@ -329,6 +329,15 @@ def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> li
     return output
 
 
+def _bootstrap_provisional(bootstrap: Mapping[str, Any] | None) -> bool:
+    """Return whether exported bootstrap intervals are quick-diagnostic provisional."""
+
+    if not bootstrap:
+        return False
+    metadata = bootstrap.get("metadata", {}) or {}
+    return bool(metadata.get("provisional")) or metadata.get("reason") == "quick_diagnostic_provisional"
+
+
 def render_markdown(result: MediationResult) -> str:
     """Render an assumption-aware readable report from one result."""
 
@@ -337,6 +346,7 @@ def render_markdown(result: MediationResult) -> str:
     scientific = diagnostics.get("scientific", {})
     contrast = scientific.get("contrast", {})
     rows = payload["effects"]
+    interval_label = "95% interval (provisional)" if _bootstrap_provisional(payload.get("bootstrap")) else "95% interval"
     lines = [
         "# Mintmed mediation analysis",
         "",
@@ -346,7 +356,7 @@ def render_markdown(result: MediationResult) -> str:
         f"- Exposure contrast: `{_display(contrast.get('reference'))}` → `{_display(contrast.get('comparison'))}`.",
         f"- Interpretation: `{_display(scientific.get('interpretation'))}`.",
         "",
-        "| Estimand | Estimate | 95% interval | Units | Status | Reason |",
+        f"| Estimand | Estimate | {interval_label} | Units | Status | Reason |",
         "| --- | ---: | --- | --- | --- | --- |",
     ]
     for effect in rows:
@@ -384,7 +394,7 @@ def render_markdown(result: MediationResult) -> str:
                 "",
                 "Moderator contrasts:",
                 "",
-                "| Estimand | Source | Moderator | Value | Baseline | Estimate | 95% interval | Status | Reason |",
+                f"| Estimand | Source | Moderator | Value | Baseline | Estimate | {interval_label} | Status | Reason |",
                 "| --- | --- | --- | ---: | ---: | ---: | --- | --- | --- |",
             ]
         )
@@ -424,8 +434,14 @@ def render_markdown(result: MediationResult) -> str:
                 f"- Bootstrap status: `{_display(bootstrap.get('status'))}`; interval policy: percentile 2.5/97.5 over successful finite values.",
             ]
         )
-        if bootstrap.get("metadata", {}).get("provisional") or bootstrap.get("metadata", {}).get("reason") == "quick_diagnostic_provisional":
+        if _bootstrap_provisional(bootstrap):
             lines.append("- These intervals are provisional quick-diagnostic intervals and are not release evidence.")
+        if bootstrap.get("metadata", {}).get("reason") == "bootstrap_too_few_replicates":
+            minimum = _display(bootstrap.get("metadata", {}).get("minimum_standard_replicates"))
+            lines.append(
+                f"- Intervals are withheld: standard mode requested fewer than {minimum} replicates. "
+                "Request more replicates, or use `quick_diagnostic` mode for provisional intervals."
+            )
         if bootstrap.get("failure_counts"):
             lines.append(f"- Failure counts: `{_display(bootstrap.get('failure_counts'))}`.")
 

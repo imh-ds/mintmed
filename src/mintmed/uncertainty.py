@@ -355,6 +355,15 @@ def _run_replicate(
     return record
 
 
+MIN_STANDARD_BOOTSTRAP = 200
+"""Smallest standard-mode request that may report a 2.5/97.5 percentile interval.
+
+At 200 replicates each 2.5% tail holds five replicates; smaller standard runs
+withhold intervals with ``bootstrap_too_few_replicates``. Quick-diagnostic runs
+are exempt because every interval they produce is labelled provisional.
+"""
+
+
 def _interval_eligibility(requested: int, successful: int, failed: int) -> bool:
     """Return whether a completed ordinary run meets the interval rule."""
 
@@ -404,12 +413,23 @@ def _intervals_from_records(
         eligible = False
         provisional = False
         overall_reason = "bootstrap_incomplete"
+    elif quick_diagnostic:
+        # Quick-diagnostic intervals are never inferential evidence, so every
+        # interval is provisional whether or not the ordinary rule holds.
+        provisional = successful >= 2
+        eligible = provisional
+        overall_reason = (
+            "quick_diagnostic_provisional" if provisional else "fewer_than_two_successful_replicates"
+        )
+    elif requested < MIN_STANDARD_BOOTSTRAP:
+        eligible = False
+        provisional = False
+        overall_reason = "bootstrap_too_few_replicates"
     else:
-        ordinary = _interval_eligibility(requested, successful, failed)
-        provisional = bool(quick_diagnostic and not ordinary and successful >= 2)
-        eligible = ordinary or provisional
+        provisional = False
+        eligible = _interval_eligibility(requested, successful, failed)
         if eligible:
-            overall_reason = "quick_diagnostic_provisional" if provisional else None
+            overall_reason = None
         elif successful < 2:
             overall_reason = "fewer_than_two_successful_replicates"
         else:
@@ -481,6 +501,7 @@ def _intervals_from_records(
         "eligible": bool(eligible and primary_available),
         "provisional": provisional,
         "reason": overall_reason,
+        "minimum_standard_replicates": MIN_STANDARD_BOOTSTRAP,
     }
     return tuple(intervals), status, metadata
 
