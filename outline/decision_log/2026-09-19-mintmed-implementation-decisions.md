@@ -435,6 +435,35 @@ Each task entry should record:
 - **Verification:** Full suite `371 passed` under the supported Python 3.11.9 `.venv`.
 - **Follow-up:** No full validation run has been reported with the old statistic, so no published evidence needs retracting. Population SDs for cell 11 are a separate issue (BUG-07).
 
+#### Task 13 correction — cell outcome kinds and population outcome SDs (audit BUG-07)
+
+- **Date:** 2026-09-25
+- **Task:** Task 13 (validation cell registry); correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-07).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `cell11_binary_mediator_n150` is registered as `outcome_kind="continuous"`, because its outcome is Gaussian (`Y = 0.2A + 0.6M + 0.3C + e`). It is therefore gated on the SD-scaled continuous bias rule, not the 0.02 probability rule, and it has a population outcome SD.
+  - Every continuous cell's `population_outcome_sd` is now `sqrt` of a closed-form `Var(Y)` in `_OUTCOME_VARIANCE`, with the derivation in comments. Cell 11's variance comes from `_cell11_outcome_variance`, using the same 64-point Gauss–Hermite nodes as its truth.
+  - `cell12` remains the only binary-outcome cell.
+- **Rationale:** The Task 13 plan (`outline/plan/task-13-validation-runner.md`, line 197) requires population SDs "from the generating equations": conditional product moments for cell 6, square moments and `Cov(M², C)` for cells 8–9, and quadrature for cell 11. The registered values were approximations and were wrong for six cells. That loosened the bias gate for cells 06, 08, 09 and 10 and tightened it for 03 and 07. Cell 11 was also tested against the wrong gate.
+
+  | Cell | Old SD | Corrected SD | Old SD error | Variance source |
+  |---|---:|---:|---:|---|
+  | 03 | 1.1619 | 1.2093 | −3.9% | `Var(Y) = 1.4625` |
+  | 06 | 1.5000 | 1.3366 | +12.2% | `1.7866` |
+  | 07 | 1.3723 | 1.4121 | −2.8% | `1.994`; the C coefficient is 0.66, not 0.57 |
+  | 08/09 | 1.3500 | 1.2712 | +6.2% | `1.615892` |
+  | 10 | 1.5000 | 1.2320 | +21.8% | `1.51771875` |
+  | 11 | none | 1.1077 | (was binary) | `1.227047…` by quadrature |
+- **Actions:** Red contracts in `f363042`. Implementation in `cc66fdc` (`src/mintmed/experiments/mediation_validation.py`).
+- **Evidence:** Each analytic SD agrees with a 2,000,000-row simulation of its generator to within 0.11%. New tests check:
+  - the closed-form variances, to `1e-12`;
+  - agreement with a 1,000,000-row simulation, within 1%;
+  - that `outcome_kind` matches the generated outcome node family for all 12 cells.
+- **Files:** `src/mintmed/experiments/mediation_validation.py`; `tests/integration/test_mediation_validation.py`; this decision log.
+- **Verification:** Full suite `405 passed` under the supported Python 3.11.9 `.venv`.
+- **Follow-up:** No validation evidence had been published with the old metadata. The config YAML and its hash are unchanged, because the registry is code, not configuration. Runtime is unaffected.
+
 ## Reusable entry template
 
 ### Task NN — Name
