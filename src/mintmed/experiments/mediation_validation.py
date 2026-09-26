@@ -410,18 +410,76 @@ def cell_truth(cell_id: str) -> tuple[float, float, float]:
     raise ValueError(f"unknown validation cell ID {cell_id!r}")
 
 
+def _cell11_outcome_variance() -> float:
+    """Return Var(Y) for cell 11 by 64-point Gauss-Hermite quadrature over C.
+
+    With p(a, c) = expit(-0.4 + 0.8a + 0.3c) and Y = 0.2A + 0.6M + 0.3C + e_Y,
+    Var(Y) = E[0.36 p(1 - p) + 1] + Var(0.2A + 0.6p(A, C) + 0.3C), A ~ Bernoulli(0.5).
+    """
+
+    c_values, c_weights = _hermite64()
+    within = 0.0
+    first = 0.0
+    second = 0.0
+    for a in (0.0, 1.0):
+        probabilities = expit(-0.4 + 0.8 * a + 0.3 * c_values)
+        conditional_mean = 0.2 * a + 0.6 * probabilities + 0.3 * c_values
+        within += 0.5 * float(np.dot(c_weights, 0.36 * probabilities * (1.0 - probabilities) + 1.0))
+        first += 0.5 * float(np.dot(c_weights, conditional_mean))
+        second += 0.5 * float(np.dot(c_weights, conditional_mean**2))
+    return within + second - first**2
+
+
+# Population Var(Y) per generator. The exposure (and W in cell 10) is a balanced
+# Bernoulli(0.5), so Var(A) = 0.25; C and every error term are independent N(0, 1)
+# unless stated. Each value is pinned by a closed-form test and by a 1e6-row
+# simulation within 1%.
+_OUTCOME_VARIANCE = {
+    # Y = 0.45A + 0.45C + 0.5e_M + e_Y.
+    "linear": 0.45**2 * 0.25 + 0.45**2 + 0.5**2 + 1.0,
+    # M = 0.3C + e_M, so Y = 0.2A + 0.45C + 0.5e_M + e_Y.
+    "no_a_to_m": 0.2**2 * 0.25 + 0.45**2 + 0.5**2 + 1.0,
+    # Y = 0.2A + 0.3C + e_Y.
+    "no_m_to_y": 0.2**2 * 0.25 + 0.3**2 + 1.0,
+    "no_mediation": 0.2**2 * 0.25 + 0.3**2 + 1.0,
+    # M1 = 0.5A + e1, M2 = 0.4A + e2, corr(e1, e2) = 0.4; given A, the outcome
+    # part f = 0.4M1 + 0.4M2 + 0.2M1M2 has variance b1^2 + b2^2 + 2(0.4)b1b2
+    # + 0.04(1 + 0.4^2) with b1 = 0.4 + 0.2E[M2|A], b2 = 0.4 + 0.2E[M1|A]:
+    # 0.4944 (A = 0) and 0.7188 (A = 1); E[Y|A] = 0.08 and 0.68.
+    "parallel_interaction": 0.5 * (0.4944 + 0.7188) + 0.25 * (0.68 - 0.08) ** 2 + 0.3**2 + 1.0,
+    # Reduced form Y = 0.56A + 0.66C + 0.4e1 + 0.4e2 + 0.4e3 + e_Y.
+    "serial_three": 0.56**2 * 0.25 + 0.66**2 + 3 * 0.4**2 + 1.0,
+    # M | A ~ N(0.5A, V = 1.09) and Cov(M^2, C) = 0.6E[M|A]; given A,
+    # Var(Y|A) = 0.16(4 mu^2 V + 2V^2) + 0.09 + 0.144 mu + 1 with mu = 0.5A:
+    # 1.470192 (A = 0) and 1.716592 (A = 1); E[Y|A] = 0.436 and 0.736.
+    "quadratic": 0.5 * (1.470192 + 1.716592) + 0.25 * (0.736 - 0.436) ** 2,
+    "spline": 0.5 * (1.470192 + 1.716592) + 0.25 * (0.736 - 0.436) ** 2,
+    # Given (A, W) with beta = 0.3 + 0.3W, Var(Y|A, W) = (0.3beta + 0.3)^2 + beta^2 + 1:
+    # 1.2421 (W = 0) and 1.5904 (W = 1); E[Y|A, W] = 0, 0.29, 0.32, 0.88.
+    "moderated": 0.5 * (1.2421 + 1.5904) + (0.0**2 + 0.29**2 + 0.32**2 + 0.88**2) / 4 - ((0.0 + 0.29 + 0.32 + 0.88) / 4) ** 2,
+    # Gaussian outcome with a Bernoulli mediator; see _cell11_outcome_variance.
+    "binary_mediator": _cell11_outcome_variance(),
+}
+
+
+def _outcome_sd(generator_name: str) -> float:
+    return math.sqrt(_OUTCOME_VARIANCE[generator_name])
+
+
 _CELL_REGISTRY = (
-    ValidationCell("cell01_linear_n100", 1, 100, "linear", "continuous", population_outcome_sd=math.sqrt(1.503125)),
-    ValidationCell("cell02_linear_n250", 2, 250, "linear", "continuous", population_outcome_sd=math.sqrt(1.503125)),
-    ValidationCell("cell03_no_a_to_m_n100", 3, 100, "no_a_to_m", "continuous", population_outcome_sd=math.sqrt(1.35)),
-    ValidationCell("cell04_no_m_to_y_n100", 4, 100, "no_m_to_y", "continuous", population_outcome_sd=math.sqrt(1.1)),
-    ValidationCell("cell05_no_mediation_n100", 5, 100, "no_mediation", "continuous", population_outcome_sd=math.sqrt(1.1)),
-    ValidationCell("cell06_parallel_interaction_n150", 6, 150, "parallel_interaction", "continuous", ("TNIE",), population_outcome_sd=1.5),
-    ValidationCell("cell07_serial_three_n200", 7, 200, "serial_three", "continuous", population_outcome_sd=math.sqrt(1.0 + 0.56**2 * 0.25 + 0.57**2 + 0.4**2 * 3)),
-    ValidationCell("cell08_quadratic_n100", 8, 100, "quadratic", "continuous", population_outcome_sd=1.35),
-    ValidationCell("cell09_spline_n250", 9, 250, "spline", "continuous", population_outcome_sd=1.35),
-    ValidationCell("cell10_moderated_n150", 10, 150, "moderated", "continuous", ("TNIE_W0", "TNIE_W1", "TNIE_difference"), population_outcome_sd=1.5),
-    ValidationCell("cell11_binary_mediator_n150", 11, 150, "binary_mediator", "binary", truth_method="gauss_hermite_64"),
+    ValidationCell("cell01_linear_n100", 1, 100, "linear", "continuous", population_outcome_sd=_outcome_sd("linear")),
+    ValidationCell("cell02_linear_n250", 2, 250, "linear", "continuous", population_outcome_sd=_outcome_sd("linear")),
+    ValidationCell("cell03_no_a_to_m_n100", 3, 100, "no_a_to_m", "continuous", population_outcome_sd=_outcome_sd("no_a_to_m")),
+    ValidationCell("cell04_no_m_to_y_n100", 4, 100, "no_m_to_y", "continuous", population_outcome_sd=_outcome_sd("no_m_to_y")),
+    ValidationCell("cell05_no_mediation_n100", 5, 100, "no_mediation", "continuous", population_outcome_sd=_outcome_sd("no_mediation")),
+    ValidationCell("cell06_parallel_interaction_n150", 6, 150, "parallel_interaction", "continuous", ("TNIE",), population_outcome_sd=_outcome_sd("parallel_interaction")),
+    ValidationCell("cell07_serial_three_n200", 7, 200, "serial_three", "continuous", population_outcome_sd=_outcome_sd("serial_three")),
+    ValidationCell("cell08_quadratic_n100", 8, 100, "quadratic", "continuous", population_outcome_sd=_outcome_sd("quadratic")),
+    ValidationCell("cell09_spline_n250", 9, 250, "spline", "continuous", population_outcome_sd=_outcome_sd("spline")),
+    ValidationCell("cell10_moderated_n150", 10, 150, "moderated", "continuous", ("TNIE_W0", "TNIE_W1", "TNIE_difference"), population_outcome_sd=_outcome_sd("moderated")),
+    # Cell 11 has a Bernoulli mediator but a Gaussian outcome, so its effects are
+    # in outcome units and it is gated on the continuous SD-scaled bias rule.
+    ValidationCell("cell11_binary_mediator_n150", 11, 150, "binary_mediator", "continuous", truth_method="gauss_hermite_64", population_outcome_sd=_outcome_sd("binary_mediator")),
     ValidationCell("cell12_mixed_binary_serial_n250", 12, 250, "mixed_binary_serial", "binary", truth_method="gauss_hermite_64"),
 )
 _CELL_BY_ID = {cell.cell_id: cell for cell in _CELL_REGISTRY}
