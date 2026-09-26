@@ -349,6 +349,8 @@ _T = TypeVar("_T", bound=Enum)
 _MISSING = object()
 _SUPPORTED_TYPES = {"continuous", "binary", "categorical", "ordinal", "count"}
 _ENDOGENOUS_UNSUPPORTED_TYPES = {"ordinal", "count"}
+# Starting Sobol budgets accepted by the g-formula engine (gformula._BUDGETS).
+_INTEGRATION_DRAW_BUDGETS = (256, 512, 1024, 2048, 4096)
 _INTERPRETATIONS = {"assumption_based_causal", "model_standardized"}
 _MISSING_POLICIES = {"error", "complete_case"}
 _ARRANGEMENTS = {"parallel", "sequential"}
@@ -1295,8 +1297,16 @@ def _validate_computation(computation: ComputationSpec) -> None:
         _fail("invalid_computation", "computation.seed", "seed must be a non-negative integer")
     if isinstance(computation.bootstrap, bool) or computation.bootstrap < 0:
         _fail("invalid_computation", "computation.bootstrap", "bootstrap must be non-negative")
-    if isinstance(computation.integration_draws, bool) or computation.integration_draws < 1:
-        _fail("invalid_computation", "computation.integration_draws", "integration_draws must be positive")
+    if (
+        isinstance(computation.integration_draws, bool)
+        or not isinstance(computation.integration_draws, int)
+        or computation.integration_draws not in _INTEGRATION_DRAW_BUDGETS
+    ):
+        _fail(
+            "invalid_computation",
+            "computation.integration_draws",
+            "integration_draws must be one of 256, 512, 1024, 2048, or 4096",
+        )
     if computation.integration_tolerance <= 0:
         _fail("invalid_computation", "computation.integration_tolerance", "tolerance must be positive")
 

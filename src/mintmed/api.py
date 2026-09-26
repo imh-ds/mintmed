@@ -100,6 +100,9 @@ def _failure_state(exc: Exception, stage: str) -> str:
     if isinstance(exc, PlanValidationError):
         return "invalid_specification"
     if isinstance(exc, GFormulaError):
+        if exc.code == "invalid_draw_budget":
+            # A configuration error, not a failure of the numerical method.
+            return "invalid_specification"
         if exc.status is AnalysisStatus.INTEGRATION_FAILED:
             return "integration_unresolved"
         if exc.status is AnalysisStatus.UNSUPPORTED:

@@ -65,7 +65,7 @@ def valid_spec():
             ),
             mediator_order=("efficacy", "coping"),
             contrast=ContrastSpec(reference=0, comparison=1),
-            computation=ComputationSpec(seed=20260919, bootstrap=0, integration_draws=8),
+            computation=ComputationSpec(seed=20260919, bootstrap=0, integration_draws=256),
         )
     )
 
