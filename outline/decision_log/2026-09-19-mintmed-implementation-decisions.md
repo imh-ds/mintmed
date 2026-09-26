@@ -749,6 +749,99 @@ Each task entry should record:
 - **Files:** `src/mintmed/api.py`; `src/mintmed/diagnostics.py`; `src/mintmed/report.py`; `src/mintmed/cli.py`; `tests/mediation/test_analysis.py`; `tests/mediation/test_report.py`; `tests/integration/test_cli.py`; this decision log.
 - **Verification:** Full suite `498 passed` at `1e0a28a`.
 
+#### Tasks 11/12 correction — assumptions follow the interpretation mode (audit BUG-23)
+
+- **Date:** 2026-09-26
+- **Task:** Task 11 (diagnostics) and Task 12 (reports); correction from the Tasks 1–14 audit (BUG-23).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `diagnostics._assumptions(plan)` builds the list from `plan.contrast.interpretation`.
+  - `model_standardized` results state that they are model-standardized contrasts, not identified causal effects.
+  - `assumption_based_causal` results list the methodology's §6 identification set: consistency; positivity; no interference; no unmeasured exposure–outcome, exposure–mediator or mediator–outcome confounding; no exposure-induced mediator–outcome confounders; temporal ordering; cross-world independence; no measurement error.
+  - Both modes state correct node specification and the declared factorization order (a modelling choice for parallel mediators). The standardization population names any fixed moderator values, which also closes the BUG-09 follow-up.
+- **Rationale:** The fixed list claimed "interpretation is assumption-based" even for model-standardized results, and never stated the identification assumptions reports must carry.
+- **Actions:** Red contracts in `7087471`. Implementation in `e47976c`.
+- **Evidence:** Tests cover both modes and the moderator label.
+- **Files:** `src/mintmed/diagnostics.py`; `tests/mediation/test_analysis.py`; this decision log.
+
+#### Task 04 correction — numerical library versions in the analysis hash (audit BUG-24)
+
+- **Date:** 2026-09-26
+- **Task:** Task 4 (compiled plan); correction from the Tasks 1–14 audit (BUG-24).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:** `spec._software_versions()` adds the NumPy, SciPy, Statsmodels and Patsy versions to the `analysis_hash` payload, alongside mintmed and pandas. One hash identifying both the scientific inputs and the numerical environment was preferred over a separate `environment_hash`.
+- **Rationale:** NumPy drives the bootstrap streams, SciPy the Sobol scrambling and normal quantiles, Statsmodels the fits, and Patsy the spline bases. Two runs with the same hash could therefore differ numerically.
+- **Actions:** Red contract in `3e64fb2`. Implementation in `d4068ea`.
+- **Evidence:** Changing any one of the four versions changes the hash, and restoring it restores the hash. Every existing `analysis_hash` changes once; no committed document pins one.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_plan.py`; this decision log.
+
+#### Task 04 correction — sparse threshold recorded and complexity preflight (audit BUG-25)
+
+- **Date:** 2026-09-26
+- **Task:** Task 4 (compiled plan); correction from the Tasks 1–14 audit (BUG-25).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `binary_counts` records the fixed `threshold` (5).
+  - `estimate_plan` counts each node's coefficients from its declared terms: intercept; 1 per linear or quadratic term (the quadratic basis is `I(x ** 2)` alone); `df` for splines; levels − 1 for categoricals; and column products for interactions. Tests pin these counts to the fitted Patsy designs for six fixtures.
+  - The counts are stored in `diagnostics["complexity"]` with observations per parameter and, for Bernoulli nodes, minority events per parameter. A `low_observations_per_parameter` plan warning is raised below 10.
+  - The count is computed from declared terms at plan time rather than from Task 5 designs, so the warning appears before any fit and does not need data-dependent design construction.
+- **Rationale:** The Task 4 plan requires the threshold in `binary_counts`, and the methodology requires sparse-observations-per-parameter warnings. Only `N < 100` was flagged before.
+- **Actions:** Red contracts in `9365932`. Implementation in `9b6e0f2`. The plan-summary test now checks for `small_sample` within the warnings line.
+- **Evidence:** No validation cell or example triggers the warning; the lowest ratio is 21.4 per parameter, in cell 12. The four-mediator fixture at N = 50 does.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_plan.py`; this decision log.
+
+#### Tasks 10/13 decision — keep 399 replicates under a recorded zero-failure rule (audit BUG-26)
+
+- **Date:** 2026-09-26
+- **Task:** Task 10 (interval rule) and Task 13 (validation design); decision from the Tasks 1–14 audit (BUG-26).
+- **Status:** Completed.
+- **Schedule:** Decision applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - Keep `bootstrap_replicates: 399`. The Task 13 plan and the baseline plan lock the matrix "exactly" at 399, and 399 makes the 2.5/97.5 percentiles fall on whole order statistics.
+  - The validation therefore measures a **zero-failure** interval policy: under the `< 400` rule, one failed refit withholds every interval in that dataset.
+  - This policy is now explicit and measured:
+    - rows record `bootstrap_successful`/`bootstrap_failed` in provenance;
+    - cell summaries report `few_failure_withheld_rows`/`_rate`, the datasets lost to only one or two failures;
+    - `summary.json` records `interval_rule: all_399_refits_must_succeed`;
+    - `report.md` states the rule.
+- **Rationale:** Switching to 400 would bring in the 1% rule, but it would change the locked design and its configuration hash. The main risk, solver-specific failures from the custom IRLS, was removed by BUG-04. The two-repeat full-matrix pilot on `78a237a` had 0 failed refits in 9,576. If this ruling is wrong, the validation would under-report coverage whenever isolated separation failures occur. The new `few_failure_withheld_rate` makes that visible, and moving to 400 would then be a one-line configuration amendment recorded here.
+- **Actions:** Red contracts in `9809d01`. Implementation in `ab77d58`.
+- **Evidence:** Tests cover the row provenance counts, the few-failure count (2 of 4 synthetic datasets) and the report/summary rule text. Runtime is unaffected.
+- **Files:** `src/mintmed/experiments/mediation_validation.py`; `src/mintmed/experiments/mediation_validation_reporting.py`; `tests/integration/test_mediation_validation.py`; this decision log.
+
+#### Tasks 12–14 status correction — reconcile closure claims with the audit (audit BUG-27)
+
+- **Date:** 2026-09-26
+- **Task:** Tasks 12, 13 and 14, status correction. The earlier entries are preserved (decision rule 1); this entry supersedes their status claims.
+- **Status:**
+  - Task 12: verified at the pre-audit commit; re-verification of the current code pending.
+  - Task 13: verified at the pre-audit commit; re-verification pending.
+  - Task 14: **blocked** pending CI re-verification.
+  - Task 15: deferred.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision and corrections:**
+  1. **Task 14 closure (entry "close the supported-runtime and integration blockers") was not supported by its evidence.**
+     - Its "Completed for Tasks 2–14" and "no longer blocked" claims rested on a five-case pilot whose proxy map hid the Sobol path and cell 11's cost (BUG-03).
+     - Under the frozen configuration cell 06 was `integration_unresolved` in every dataset (BUG-02).
+     - Contributions could publish single-draw values (BUG-01), and the bias gate and cell metadata were wrong (BUG-06, BUG-07).
+     - Task 14 is therefore re-opened as blocked from the audit date (2026-09-25). All five blockers are now fixed on `codex/resolve-tasks-2-14` (see the BUG-01/02/03/06/07 entries). The runtime forecast was re-established locally: 10.899 CPU-h, a pass, on `78a237a` under Windows Python 3.11.9. It has not yet been re-run in GitHub Actions, which remains the authoritative runtime boundary. The branch is 56+ commits ahead of `origin` and unpushed, so Task 14 stays **blocked** until the Python 3.11 suite, the CLI/validation smoke and the two-repeat pilot pass in CI on the post-audit head.
+  2. **Task 12 verified (pre-audit).** GitHub Actions run `36197191461` on `7d75160` passed the Python 3.11 suite and the CLI examples/validation smoke. That supersedes the Task 12 entry's "runtime verification blocked" status for the code as of `7d75160`. The audit later changed the examples, reports and CLI (BUG-05, 09, 10, 17, 22), so the current code needs the same CI job re-run.
+  3. **Task 13 verified (pre-audit).** The same run `36197191461` covered the Task 13 suite and smoke configuration under Python 3.11. That supersedes "Blocked pending runtime verification" as of `7d75160`. The runner, reporting and gates were then corrected (BUG-06, 07, 12, 13, 26), so the post-audit re-run is again the gate. The full 2,400-dataset matrix has not been run.
+  4. **Local versus CI verification.** The closure entry's "No local pytest or simulation run was used" is accurate only for its own optimizations. The earlier "restore supported Python 3.11 verification" entry did run the local `.venv` (322 tests). Every audit correction since 2026-09-25 was verified locally under the supported `.venv` Python 3.11.9 (latest: full suite `514 passed` at `ab77d58`) and is not yet CI-verified.
+  5. **Review statements.** Several Task 2–11 entries end with "no Critical or Important findings remain". The audit found Critical and High defects in code those reviews covered, notably BUG-01 (Task 9), BUG-04 (Tasks 6/10) and BUG-08 (Tasks 3/4). Those statements are superseded, and the per-bug entries above record each correction.
+  6. **BUG-04 rule violation adjudication.** The Task 14 optimization `a49263f` broke the plan's non-negotiable "Statsmodels OLS/GLM, no custom IRLS" rule. It was adjudicated as a violation rather than an allowed exception, and reversed in `78a237a`; see the "Statsmodels-only bootstrap refits" entry. The runtime cost was accepted.
+  7. **Runtime report.** `docs/validation/runtime_pilot.md` no longer uses a proxy map; it was regenerated from full-matrix pilots in BUG-03 and BUG-04, which resolves the report part of this item.
+- **Rationale:** Decision rule 5 allows "completed" only after acceptance checks pass. The audit showed they had not passed for the frozen configuration, and the corrected code has not yet been checked in CI.
+- **Evidence:**
+  - Audit file `outline/bugs/2026-09-25-tasks-01-14-audit.md`: BUG-01 to BUG-27 are marked Fixed, with commits.
+  - CI runs `36197191461` (pre-audit Task 12/13 verification) and `36196715109` (pre-audit pilot on `b80aeb3`, superseded by BUG-03/04).
+  - Local runtime pilot on `78a237a`: 10.899 CPU-h.
+- **Files:** this decision log.
+- **Follow-up:** Push `codex/resolve-tasks-2-14` (owner's decision) and run the verification workflow with `run_pilot`. If the Python 3.11 suite, the smoke and the two-repeat pilot pass, record the run IDs in a dated entry that marks Tasks 12–14 verified and completed. Task 15 must not start before then.
+
 ## Reusable entry template
 
 ### Task NN — Name
