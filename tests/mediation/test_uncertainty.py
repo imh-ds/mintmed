@@ -351,3 +351,52 @@ def test_interval_eligibility_uses_declared_success_and_failure_rules(
     from mintmed.uncertainty import _interval_eligibility
 
     assert _interval_eligibility(requested, successful, failed) is eligible
+
+
+def test_exact_path_bootstrap_contributions_match_replicate_tnie():
+    fixture, plan, point = _point_fixture("quadratic_b", n=80, bootstrap=3)
+    fitted = point.fitted_system
+    assert fitted.integration_method == "gauss_hermite"
+    contributions = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        fitted.draws,
+        point.regime_means.total_natural_indirect_effect,
+    )
+    assert contributions.available is True
+    point = replace(point, contributions=contributions)
+
+    from mintmed.uncertainty import bootstrap_analysis
+
+    result = bootstrap_analysis(fixture.data, plan, point)
+    assert result.successful == 3
+    for record in result.replicates:
+        assert record["contribution_available"] is True
+        assert record["TNIE_M"] == pytest.approx(record["TNIE"], abs=1e-10)
+
+
+def test_structurally_refused_contributions_are_not_reevaluated(monkeypatch):
+    fixture, plan, point = _point_fixture("serial_two", n=80, bootstrap=2)
+    fitted = point.fitted_system
+    refused = parallel_contributions(
+        fixture.data,
+        plan,
+        fitted,
+        fitted.draws,
+        point.regime_means.total_natural_indirect_effect,
+    )
+    assert refused.reason_code == "contribution_nonparallel"
+    point = replace(point, contributions=refused)
+
+    import mintmed.uncertainty as uncertainty
+
+    def _unexpected(*_args, **_kwargs):
+        raise AssertionError("structurally refused contributions must not be re-evaluated")
+
+    monkeypatch.setattr(uncertainty, "parallel_contributions", _unexpected)
+    result = uncertainty.bootstrap_analysis(fixture.data, plan, point)
+    assert result.successful == 2
+    for record in result.replicates:
+        assert record["contribution_available"] is False
+        assert record["contribution_reason_code"] == "contribution_nonparallel"

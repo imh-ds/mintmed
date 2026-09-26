@@ -24,6 +24,7 @@ from .spec import AnalysisPlan
 from .types import (
     AnalysisStatus,
     BootstrapResult,
+    ContributionResult,
     EffectEstimate,
     PointAnalysis,
     RegimeMeans,
@@ -228,6 +229,24 @@ def _replicate_means(
     )
 
 
+_STRUCTURAL_CONTRIBUTION_REFUSALS = frozenset(
+    {
+        "contribution_nonparallel",
+        "contribution_outcome_family",
+        "contribution_cross_mediator_term",
+    }
+)
+
+
+def _structurally_refused(contributions: ContributionResult) -> bool:
+    """Whether the point refusal follows from the declared model structure."""
+
+    return (
+        not contributions.available
+        and contributions.reason_code in _STRUCTURAL_CONTRIBUTION_REFUSALS
+    )
+
+
 def _run_replicate(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -287,14 +306,19 @@ def _run_replicate(
     )
     record.update({effect.name: float(effect.estimate) for effect in effects})
 
-    if point.contributions is not None:
+    if point.contributions is not None and _structurally_refused(point.contributions):
+        # The refusal depends only on the declared structure, which every
+        # replicate shares, so re-evaluating it cannot produce an interval.
+        record["contribution_available"] = False
+        record["contribution_reason_code"] = point.contributions.reason_code
+        record["contribution_reason"] = point.contributions.reason
+    elif point.contributions is not None:
         contribution = parallel_contributions(
             replicate_frame,
             replicate_plan,
             fitted,
-            draws,
+            fitted.draws,
             means.total_natural_indirect_effect,
-            numerical_tolerance=replicate_plan.computation.integration_tolerance,
         )
         record["contribution_available"] = bool(contribution.available)
         record["contribution_reason_code"] = contribution.reason_code

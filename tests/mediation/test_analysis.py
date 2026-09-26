@@ -398,3 +398,18 @@ def test_unsupported_declared_moderator_level_is_visible_as_warning() -> None:
     assert result.diagnostics["moderation"]["status"] == "unsupported"
     assert result.diagnostics["moderation"]["reason"]
     assert any(item["code"] == "unsupported_extrapolation" for item in result.diagnostics["warnings"])
+
+
+def test_loose_tolerance_cannot_publish_single_draw_contributions() -> None:
+    # Audit BUG-01: with integration_tolerance=1.0 the Hermite path used to
+    # publish a one-draw contribution far from the joint TNIE.
+    fixture = sample_fixture("quadratic_b", 150, np.random.default_rng(20260925))
+    spec = replace(
+        fixture.spec,
+        computation=replace(fixture.spec.computation, bootstrap=0, integration_tolerance=1.0),
+    )
+    result = mintmed.analyze_mediation(fixture.data, spec)
+    assert result.diagnostics["integration"]["method"] == "gauss_hermite"
+    tnie = next(effect.estimate for effect in result.effects if effect.name == "TNIE")
+    assert result.contributions is not None and result.contributions.available is True
+    assert result.contributions.contributions["TNIE_M"].estimate == pytest.approx(tnie, abs=1e-10)

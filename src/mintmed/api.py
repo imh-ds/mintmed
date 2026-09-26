@@ -127,7 +127,12 @@ def _analysis_status(state: str) -> AnalysisStatus:
 
 
 def _point_draws(plan: AnalysisPlan, fitted: FittedSystem) -> CommonDraws:
-    """Return the exact common draw object used by point-effect components."""
+    """Return the draw object used by moderator standardization.
+
+    Non-Sobol integrators never consume draws; the one-draw object only
+    satisfies :func:`standardize_regime` input validation.  Contributions
+    receive ``fitted.draws`` directly so they cannot use this placeholder.
+    """
 
     if fitted.draws is not None:
         return fitted.draws
@@ -405,9 +410,8 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
             data,
             plan,
             fitted,
-            draws,
+            fitted.draws,
             means.total_natural_indirect_effect,
-            numerical_tolerance=plan.computation.integration_tolerance,
         )
     except GFormulaError as exc:
         issue = _issue_for_exception(exc)
