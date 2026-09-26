@@ -384,6 +384,36 @@ def _report_markdown(
     return "\n".join(lines)
 
 
+def _require_single_configuration(raw: pd.DataFrame, config: ValidationConfig) -> None:
+    """Refuse rows produced under a configuration other than ``config``."""
+
+    if raw.empty:
+        return
+    hashes = set(raw["config_hash"].astype(str))
+    if hashes != {config.config_hash}:
+        foreign = sorted(hashes - {config.config_hash})
+        raise ValueError(
+            f"raw rows carry config_hash values {foreign} other than the config's {config.config_hash}"
+        )
+    expected = {
+        "config_hash": config.config_hash,
+        "bootstrap_requested": config.bootstrap_replicates,
+        "bootstrap_mode": config.bootstrap_mode,
+    }
+    for index, text in raw["provenance_json"].items():
+        try:
+            provenance = json.loads(str(text))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid provenance_json in raw row {index}") from exc
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"invalid provenance_json in raw row {index}")
+        for key, value in expected.items():
+            if key in provenance and provenance[key] != value:
+                raise ValueError(
+                    f"raw row {index} provenance {key}={provenance[key]!r} contradicts the config ({value!r})"
+                )
+
+
 def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) -> None:
     """Write the complete evidence artifact set from raw rows only."""
 
@@ -392,6 +422,7 @@ def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) 
     if tuple(raw.columns) != RAW_COLUMNS:
         raise ValueError("raw metrics columns do not match the frozen contract")
     raw = raw.loc[:, list(RAW_COLUMNS)].copy()
+    _require_single_configuration(raw, config)
     _atomic_text(output / "raw_metrics.csv", raw.to_csv(index=False, lineterminator="\n"))
     long = expand_metrics(raw, config)
     summary = summarize_metrics(long, raw, config)

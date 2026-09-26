@@ -31,7 +31,9 @@ def aggregate(module_path: str, config_path: Path, shards_dir: Path, output_dir:
     if not shard_paths:
         raise SystemExit(f"no raw_metrics.csv files found under {shards_dir}")
 
-    raw = pd.concat((pd.read_csv(path) for path in shard_paths), ignore_index=True)
+    frames = [pd.read_csv(path, dtype={"config_hash": str}) for path in shard_paths]
+    _reject_mixed_configurations(config, shard_paths, frames)
+    raw = pd.concat(frames, ignore_index=True)
     expected_rows = runner.expected_row_count(config)
     if len(raw) != expected_rows:
         raise SystemExit(
@@ -58,6 +60,23 @@ def aggregate(module_path: str, config_path: Path, shards_dir: Path, output_dir:
     _write_provenance(shard_paths, output_dir)
     reporting.write_report(raw, config, output_dir)
     return raw
+
+
+def _reject_mixed_configurations(config: object, shard_paths: list[Path], frames: list[pd.DataFrame]) -> None:
+    """Refuse shards whose rows were produced under a different configuration."""
+
+    expected = getattr(config, "config_hash", None)
+    if expected is None:
+        return
+    offending = [
+        f"{path} ({sorted(set(frame['config_hash'].astype(str)) - {str(expected)})})"
+        for path, frame in zip(shard_paths, frames, strict=True)
+        if "config_hash" not in frame.columns or set(frame["config_hash"].astype(str)) != {str(expected)}
+    ]
+    if offending:
+        raise SystemExit(
+            f"shard(s) carry a config_hash other than the config's {expected}: " + "; ".join(offending)
+        )
 
 
 def _write_provenance(shard_paths: list[Path], output_dir: Path) -> None:
