@@ -772,7 +772,15 @@ def _validate_variable(variable: VariableSpec, path: str) -> None:
         if observed_type == "binary" and tuple(variable.levels) != (0, 1):
             _fail("invalid_binary_levels", f"{path}.levels", "binary levels must be exactly [0, 1]")
         return
+    if observed_type == "continuous" and variable.levels:
+        _fail("invalid_levels", f"{path}.levels", "continuous variables cannot declare levels")
     if role in {Role.MEDIATOR, Role.OUTCOME}:
+        if observed_type == "binary" and variable.family is Family.GAUSSIAN:
+            _fail(
+                "family_type_mismatch",
+                f"{path}.type",
+                "binary responses must use the Bernoulli family, not a linear-probability Gaussian",
+            )
         if observed_type in _ENDOGENOUS_UNSUPPORTED_TYPES:
             _fail(
                 "unsupported_observed_type",
@@ -1107,10 +1115,7 @@ def _validate_model(spec: ModelSpec) -> None:
         if response_variable is None:
             _fail("unknown_model_node", f"models.{node.response}", "response is not declared")
         expected_family = response_variable.family or (
-            Family.BERNOULLI
-            if response_variable.observed_type == "binary"
-            and response_variable.role is Role.OUTCOME
-            else Family.GAUSSIAN
+            Family.BERNOULLI if response_variable.observed_type == "binary" else Family.GAUSSIAN
         )
         if node.family is not expected_family:
             _fail("family_mismatch", f"models.{node.response}.family", "node family does not match its response declaration")
@@ -1181,6 +1186,11 @@ def _validate_term(
     if term.variable not in allowed:
         code = "invalid_predictor_order" if predictor.role is Role.MEDIATOR else "invalid_predictor_role"
         _fail(code, f"{term_path}.variable", "predictor is not permitted for this node")
+    if predictor.observed_type == "categorical" and term.kind is not TermKind.CATEGORICAL:
+        # A numeric code is not evidence that a construct is continuous.
+        _fail("invalid_term_semantics", term_path, "categorical predictors require a categorical basis")
+    if predictor.observed_type == "continuous" and term.kind is TermKind.CATEGORICAL:
+        _fail("invalid_term_semantics", term_path, "continuous predictors cannot use a categorical basis")
     if term.kind is TermKind.NATURAL_SPLINE:
         if term.df != 3:
             _fail("invalid_spline_df", f"{term_path}.df", "natural spline terms require df=3")
