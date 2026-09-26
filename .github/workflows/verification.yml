@@ -70,6 +70,12 @@ jobs:
           --data examples/serial_moderated/data.csv
           --spec examples/serial_moderated/analysis.yaml
           --output results/generated/example-serial-moderated
+      - name: Check example outputs
+        run: >
+          python scripts/check_example_outputs.py
+          results/generated/example-single
+          results/generated/example-parallel
+          results/generated/example-serial-moderated
       - name: Run validation smoke configuration
         run: >
           python -m mintmed.experiments.mediation_validation

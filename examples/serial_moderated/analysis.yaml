@@ -30,26 +30,28 @@ scientific_edges:
   - [M1, Y]
   - [M2, Y]
 models:
+  # A and W are 0/1 indicators, so a linear basis is the same model as
+  # treatment-coded categorical terms and keeps the Sobol evaluation fast.
   M1:
     intercept: true
     terms:
-      - {variable: A, basis: categorical}
-      - {variable: W, basis: categorical}
+      - {variable: A, basis: linear}
+      - {variable: W, basis: linear}
       - {variable: C, basis: linear}
     interactions:
       - {left: W, right: A}
   M2:
     intercept: true
     terms:
-      - {variable: A, basis: categorical}
+      - {variable: A, basis: linear}
       - {variable: M1, basis: linear}
       - {variable: C, basis: linear}
     interactions: []
   Y:
     intercept: true
     terms:
-      - {variable: A, basis: categorical}
-      - {variable: W, basis: categorical}
+      - {variable: A, basis: linear}
+      - {variable: W, basis: linear}
       - {variable: C, basis: linear}
       - {variable: M1, basis: linear}
       - {variable: M2, basis: linear}
@@ -65,10 +67,10 @@ interpretation: model_standardized
 missing: error
 computation:
   seed: 20260921
-  bootstrap: 2
+  bootstrap: 50
   bootstrap_mode: quick_diagnostic
   integration_draws: 256
-  integration_tolerance: 1.0
-  max_seconds: 30
+  integration_tolerance: 1.0e-3
+  max_seconds: 180
   memory_budget_mb: 256
   information: false

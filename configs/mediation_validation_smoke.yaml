@@ -5,7 +5,7 @@ replicates: 2
 bootstrap_replicates: 3
 bootstrap_mode: quick_diagnostic
 integration_draws: 256
-integration_tolerance: 1.0
+integration_tolerance: 1.0e-3
 max_seconds: 60
 memory_budget_mb: 512
 cell_ids:

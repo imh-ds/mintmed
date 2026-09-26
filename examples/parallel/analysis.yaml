@@ -48,10 +48,10 @@ interpretation: model_standardized
 missing: error
 computation:
   seed: 20260920
-  bootstrap: 2
+  bootstrap: 50
   bootstrap_mode: quick_diagnostic
   integration_draws: 256
-  integration_tolerance: 1.0
-  max_seconds: 30
+  integration_tolerance: 1.0e-3
+  max_seconds: 120
   memory_budget_mb: 256
   information: false
