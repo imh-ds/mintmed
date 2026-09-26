@@ -690,18 +690,6 @@ def _parse_exposure(value: Any, path: str) -> tuple[VariableSpec, Any, Any]:
         Role.EXPOSURE,
         path,
     )
-    if variable.observed_type not in {"binary", "categorical", "continuous"}:
-        _fail("unsupported_exposure_type", f"{path}.type", "exposure type is not supported")
-    if variable.observed_type in {"binary", "categorical"} and not variable.levels:
-        _fail("missing_levels", f"{path}.levels", "exposure levels must be explicit")
-    if variable.observed_type == "continuous" and variable.levels:
-        _fail(
-            "invalid_exposure_levels",
-            f"{path}.levels",
-            "continuous exposures cannot declare categorical levels",
-        )
-    if variable.observed_type == "binary" and tuple(variable.levels) != (0, 1):
-        _fail("invalid_binary_levels", f"{path}.levels", "binary levels must be exactly [0, 1]")
     return variable, mapping["reference"], mapping["comparison"]
 
 
@@ -719,6 +707,7 @@ def _parse_endogenous_variable(value: Any, role: Role, path: str) -> VariableSpe
         | {"type": observed_type},
         role,
         path,
+        validate=False,
     )
     variable = VariableSpec(
         variable.name,
@@ -728,21 +717,8 @@ def _parse_endogenous_variable(value: Any, role: Role, path: str) -> VariableSpe
         label=variable.label,
         family=family,
     )
-    if observed_type in _ENDOGENOUS_UNSUPPORTED_TYPES:
-        _fail(
-            "unsupported_observed_type",
-            f"{path}.type",
-            "ordinal and count endogenous responses are not supported",
-        )
+    _validate_variable(variable, path)
     if family is Family.BERNOULLI:
-        if observed_type != "binary":
-            _fail("family_type_mismatch", f"{path}.type", "Bernoulli responses must be binary")
-        if variable.levels and tuple(variable.levels) != (0, 1):
-            _fail(
-                "invalid_binary_levels",
-                f"{path}.levels",
-                "Bernoulli response levels must be exactly [0, 1]",
-            )
         if not variable.levels:
             variable = VariableSpec(
                 variable.name,
@@ -755,28 +731,71 @@ def _parse_endogenous_variable(value: Any, role: Role, path: str) -> VariableSpe
     return variable
 
 
-def _parse_variable(value: Any, role: Role, path: str) -> VariableSpec:
+def _parse_variable(value: Any, role: Role, path: str, *, validate: bool = True) -> VariableSpec:
     mapping = _mapping(value, path, role.value)
     _keys(mapping, {"name", "type", "levels", "label"}, path, required={"name", "type"})
     name = _string(mapping["name"], f"{path}.name")
-    if not name:
-        _fail("invalid_variable_name", f"{path}.name", "variable names cannot be empty")
     observed_type = _string(mapping["type"], f"{path}.type")
-    if observed_type not in _SUPPORTED_TYPES:
-        _fail("unsupported_observed_type", f"{path}.type", f"unsupported observed type {observed_type!r}")
     levels = _levels(mapping.get("levels", ()), f"{path}.levels")
-    if (
-        observed_type in {"binary", "categorical"}
-        and not levels
-        and role is not Role.PARTICIPANT_ID
-    ):
-        _fail("missing_levels", f"{path}.levels", "categorical levels must be explicit")
     label = mapping.get("label")
     if label is not None:
         label = _string(label, f"{path}.label")
-    if role is Role.PARTICIPANT_ID and observed_type != "categorical":
-        _fail("invalid_participant_id", f"{path}.type", "participant_id must be categorical")
-    return VariableSpec(name=name, role=role, observed_type=observed_type, levels=levels, label=label)
+    variable = VariableSpec(name=name, role=role, observed_type=observed_type, levels=levels, label=label)
+    if validate:
+        _validate_variable(variable, path)
+    return variable
+
+
+def _validate_variable(variable: VariableSpec, path: str) -> None:
+    """Apply every variable-level rule shared by the YAML and template paths."""
+
+    if not isinstance(variable, VariableSpec):
+        _fail("invalid_variable", path, "variables must be VariableSpec instances")
+    if not isinstance(variable.name, str) or not variable.name:
+        _fail("invalid_variable_name", f"{path}.name", "variable names cannot be empty")
+    observed_type = variable.observed_type
+    if not isinstance(observed_type, str) or observed_type not in _SUPPORTED_TYPES:
+        _fail("unsupported_observed_type", f"{path}.type", f"unsupported observed type {observed_type!r}")
+    _levels(variable.levels, f"{path}.levels")
+    role = variable.role
+    if role is Role.PARTICIPANT_ID:
+        if observed_type != "categorical":
+            _fail("invalid_participant_id", f"{path}.type", "participant_id must be categorical")
+        return
+    if role is Role.EXPOSURE:
+        if observed_type not in {"binary", "categorical", "continuous"}:
+            _fail("unsupported_exposure_type", f"{path}.type", "exposure type is not supported")
+        if observed_type in {"binary", "categorical"} and not variable.levels:
+            _fail("missing_levels", f"{path}.levels", "exposure levels must be explicit")
+        if observed_type == "continuous" and variable.levels:
+            _fail(
+                "invalid_exposure_levels",
+                f"{path}.levels",
+                "continuous exposures cannot declare categorical levels",
+            )
+        if observed_type == "binary" and tuple(variable.levels) != (0, 1):
+            _fail("invalid_binary_levels", f"{path}.levels", "binary levels must be exactly [0, 1]")
+        return
+    if role in {Role.MEDIATOR, Role.OUTCOME}:
+        if observed_type in _ENDOGENOUS_UNSUPPORTED_TYPES:
+            _fail(
+                "unsupported_observed_type",
+                f"{path}.type",
+                "ordinal and count endogenous responses are not supported",
+            )
+        if variable.family is Family.BERNOULLI:
+            if observed_type != "binary":
+                _fail("family_type_mismatch", f"{path}.type", "Bernoulli responses must be binary")
+            if variable.levels and tuple(variable.levels) != (0, 1):
+                _fail(
+                    "invalid_binary_levels",
+                    f"{path}.levels",
+                    "Bernoulli response levels must be exactly [0, 1]",
+                )
+            # Bernoulli responses may omit levels; the YAML parser fills (0, 1).
+            return
+    if observed_type in {"binary", "categorical"} and not variable.levels:
+        _fail("missing_levels", f"{path}.levels", "categorical levels must be explicit")
 
 
 def _parse_edges(value: Any) -> tuple[tuple[str, str], ...]:
@@ -1020,6 +1039,21 @@ def _validate_model(spec: ModelSpec) -> None:
         _fail("invalid_role", "outcome.role", "outcome must have role outcome")
     if not 1 <= len(spec.mediators) <= 4:
         _fail("mediator_count", "mediators", "declare between one and four mediators")
+    _validate_variable(spec.exposure, "exposure")
+    _validate_variable(spec.outcome, "outcome")
+    for group, expected_role in (
+        ("mediators", Role.MEDIATOR),
+        ("baseline", Role.COVARIATE),
+        ("moderators", Role.MODERATOR),
+    ):
+        for index, variable in enumerate(getattr(spec, group)):
+            if variable.role is not expected_role:
+                _fail("invalid_role", f"{group}[{index}].role", f"{group} entries must have role {expected_role.value}")
+            _validate_variable(variable, f"{group}[{index}]")
+    if spec.participant_id is not None:
+        if spec.participant_id.role is not Role.PARTICIPANT_ID:
+            _fail("invalid_role", "participant_id.role", "participant_id must have role participant_id")
+        _validate_variable(spec.participant_id, "participant_id")
     _validate_unique_variables(
         (
             spec.exposure,
