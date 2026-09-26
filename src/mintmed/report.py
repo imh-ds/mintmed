@@ -339,6 +339,31 @@ def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> li
     return output
 
 
+def _exclusion_items(exclusions: Any) -> list[str]:
+    """Render the exclusions record as readable sentences, not its keys."""
+
+    if not exclusions:
+        return ["No exclusions were recorded."]
+    if not isinstance(exclusions, Mapping):
+        return [str(item) for item in exclusions]
+    items: list[str] = []
+    remaining = dict(exclusions)
+    if "excluded_rows" in remaining:
+        count = remaining.pop("excluded_rows")
+        reasons = remaining.pop("reasons", None)
+        sentence = f"Excluded rows: {_display(count)}"
+        if isinstance(reasons, Mapping) and reasons:
+            by_column = ", ".join(f"{column}: {_display(value)}" for column, value in reasons.items())
+            sentence += f" (missing values by column: {by_column})"
+        items.append(sentence + ".")
+    features = remaining.pop("unsupported_features", None)
+    if features:
+        readable = ", ".join(str(feature).replace("_", " ") for feature in features)
+        items.append(f"Unsupported features: {readable}.")
+    items.extend(f"{str(key).replace('_', ' ').capitalize()}: {_display(value)}." for key, value in remaining.items())
+    return items or ["No exclusions were recorded."]
+
+
 def _conditioning_lines(moderator_values: Any) -> list[str]:
     """State when the primary effects are evaluated at fixed moderator values."""
 
@@ -482,9 +507,8 @@ def render_markdown(result: MediationResult) -> str:
 
     lines.extend(["", "## Assumptions and exclusions", ""])
     assumptions = diagnostics.get("assumptions", []) or ["No assumption summary was recorded."]
-    exclusions = diagnostics.get("exclusions", []) or ["No exclusions were recorded."]
     lines.extend(f"- {_markdown_cell(item)}" for item in assumptions)
-    lines.extend(f"- {_markdown_cell(item)}" for item in exclusions)
+    lines.extend(f"- {_markdown_cell(item)}" for item in _exclusion_items(diagnostics.get("exclusions")))
 
     lines.extend(["", "## Diagnostics", ""])
     lines.extend(
