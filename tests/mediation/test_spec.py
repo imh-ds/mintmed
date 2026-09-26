@@ -499,3 +499,71 @@ def test_template_round_trip_of_a_valid_yaml_spec_compiles_identically(tmp_path:
     base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
 
     assert compile_template(_template_from(base)) == base
+
+
+def _moderated_mapping(**contrast: object) -> dict[str, object]:
+    value = _valid_mapping()
+    value["moderators"] = [{"name": "age", "type": "continuous"}]
+    for node in ("coping", "distress"):
+        value["models"][node]["terms"].append({"variable": "age", "basis": "linear"})
+    value["models"]["coping"]["interactions"] = [{"left": "age", "right": "condition"}]
+    value["contrast"] = {"moderator_values": {"age": 40.0}, **contrast}
+    return value
+
+
+def test_moderator_evaluation_values_are_parsed_in_declared_order(tmp_path: Path) -> None:
+    spec = load_model_spec(
+        _write_spec(tmp_path, _moderated_mapping(moderator_evaluation={"age": [30.0, 40.0, 50.0]}))
+    )
+
+    assert spec.contrast.moderator_values == {"age": 40.0}
+    assert spec.contrast.moderator_evaluation == {"age": (30.0, 40.0, 50.0)}
+    assert compile_template(_template_from(spec)) == spec
+
+
+def test_absent_moderator_evaluation_keeps_the_canonical_form_unchanged(tmp_path: Path) -> None:
+    spec = load_model_spec(_write_spec(tmp_path, _moderated_mapping()))
+
+    assert spec.contrast.moderator_evaluation == {}
+    assert "moderator_evaluation" not in spec.to_canonical_dict()["contrast"]
+
+
+@pytest.mark.parametrize(
+    ("evaluation", "code"),
+    [
+        ({"unknown": [1.0]}, "unknown_moderator"),
+        ({"age": []}, "invalid_moderator_evaluation"),
+        ({"age": [30.0, 30.0]}, "invalid_moderator_evaluation"),
+        ({"age": ["old"]}, "invalid_moderator_evaluation"),
+        ({"age": [float("inf")]}, "invalid_moderator_evaluation"),
+    ],
+)
+def test_invalid_moderator_evaluation_is_rejected_by_yaml_and_templates(
+    tmp_path: Path, evaluation: dict[str, list[object]], code: str
+) -> None:
+    from dataclasses import replace
+
+    error = _error_for(tmp_path, _moderated_mapping(moderator_evaluation=evaluation))
+    base = load_model_spec(_write_spec(tmp_path, _moderated_mapping()))
+    contrast = replace(base.contrast, moderator_evaluation={name: tuple(values) for name, values in evaluation.items()})
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(_template_from(base, contrast=contrast))
+
+    assert error.code == code
+    assert caught.value.code == code
+
+
+def test_moderator_evaluation_requires_a_baseline_value(tmp_path: Path) -> None:
+    value = _moderated_mapping(moderator_evaluation={"age": [30.0, 50.0]})
+    value["contrast"]["moderator_values"] = {}
+
+    assert _error_for(tmp_path, value).code == "missing_moderator_baseline"
+
+
+def test_categorical_moderator_evaluation_values_must_be_declared_levels(tmp_path: Path) -> None:
+    value = _moderated_mapping(moderator_evaluation={"age": [0, 2]})
+    value["moderators"] = [{"name": "age", "type": "binary", "levels": [0, 1]}]
+    value["contrast"]["moderator_values"] = {"age": 0}
+
+    assert _error_for(tmp_path, value).code == "invalid_moderator_value"

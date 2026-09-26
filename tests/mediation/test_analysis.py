@@ -479,3 +479,71 @@ def test_complete_case_report_shows_the_excluded_row_count() -> None:
     assert "- Excluded rows: 3 (missing values by column:" in report
     assert "M: 2" in report
     assert "Y: 1" in report
+
+
+def _moderator_difference_rows(result) -> dict[tuple[object, str], dict]:
+    from mintmed.report import effects_rows
+
+    return {
+        (row["moderator_value"], row["name"]): row
+        for row in effects_rows(result)
+        if row["source"] == "moderator_difference"
+    }
+
+
+def test_baseline_self_contrast_and_structural_zero_differences_have_no_interval() -> None:
+    data, spec = _fixture("moderated_serial", n=120, bootstrap=2)
+    spec = replace(spec, computation=replace(spec.computation, bootstrap_mode="quick_diagnostic"))
+
+    result = mintmed.analyze_mediation(data, spec)
+    rows = _moderator_difference_rows(result)
+
+    for name in ("TE", "PNDE", "TNIE"):
+        baseline_row = rows[(0.0, name)]
+        assert baseline_row["reason"] == "baseline_reference"
+        assert baseline_row["interval_available"] is False
+    # W does not interact with A in the outcome model, so the direct effect
+    # cannot differ by W; floating-point noise must not look like evidence.
+    pnde = rows[(1.0, "PNDE")]
+    assert pnde["estimate"] == 0.0
+    assert pnde["reason"] == "structurally_zero"
+    assert pnde["interval_available"] is False
+    tnie = rows[(1.0, "TNIE")]
+    assert tnie["estimate"] != 0.0
+    assert tnie["reason"] == "quick_diagnostic_provisional"
+    assert tnie["interval_available"] is True
+
+
+def test_continuous_moderator_is_contrasted_at_declared_evaluation_values() -> None:
+    from mintmed.spec import Role, VariableSpec
+
+    data, spec = _fixture("moderated_serial", n=160)
+    data = data.copy()
+    data["W"] = data["W"] + np.random.default_rng(7).normal(0.0, 0.1, len(data))
+    spec = replace(
+        spec,
+        moderators=(VariableSpec("W", Role.MODERATOR, "continuous"),),
+        contrast=replace(spec.contrast, moderator_evaluation={"W": (0.0, 1.0)}),
+    )
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    moderation = result.diagnostics["moderation"]
+    assert moderation["status"] == "ok"
+    assert moderation["requested_values"] == {"W": (0.0, 1.0)}
+    assert tuple(contrast["value"] for contrast in moderation["contrasts"]) == (0.0, 1.0)
+    rows = _moderator_difference_rows(result)
+    assert rows[(1.0, "TNIE")]["estimate"] != 0.0
+
+
+def test_continuous_moderator_without_evaluation_values_is_not_contrasted() -> None:
+    from mintmed.spec import Role, VariableSpec
+
+    data, spec = _fixture("moderated_serial", n=160)
+    data = data.copy()
+    data["W"] = data["W"] + np.random.default_rng(7).normal(0.0, 0.1, len(data))
+    spec = replace(spec, moderators=(VariableSpec("W", Role.MODERATOR, "continuous"),))
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.diagnostics["moderation"]["requested"] is False
