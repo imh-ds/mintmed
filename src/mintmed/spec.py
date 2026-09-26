@@ -358,6 +358,28 @@ _ARRANGEMENTS = {"parallel", "sequential"}
 _PRIMARY_EFFECTS = ("TE", "PNDE", "TNIE")
 
 
+def _software_versions() -> dict[str, str]:
+    """Return the package versions that can change numerical results.
+
+    NumPy drives the bootstrap ``default_rng`` streams, SciPy the Sobol
+    scrambling and normal quantiles, Statsmodels the node fits, and Patsy the
+    spline bases, so all of them belong to the analysis identity.
+    """
+
+    import patsy
+    import scipy
+    import statsmodels
+
+    return {
+        "mintmed": __version__,
+        "numpy": np.__version__,
+        "pandas": pd.__version__,
+        "patsy": patsy.__version__,
+        "scipy": scipy.__version__,
+        "statsmodels": statsmodels.__version__,
+    }
+
+
 def load_model_spec(path: Path) -> ModelSpec:
     """Load and strictly validate a YAML model specification from ``path``."""
 
@@ -465,7 +487,7 @@ def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
         "integration_draws": spec.computation.integration_draws,
         "integration_tolerance": spec.computation.integration_tolerance,
         "information": spec.computation.information,
-        "software_versions": {"mintmed": __version__, "pandas": pd.__version__},
+        "software_versions": _software_versions(),
     }
     analysis_hash = hashlib.sha256(
         json.dumps(
