@@ -5,7 +5,7 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 - Status: `pass`.
 - Supported runtime: `>=3.11,<3.12`.
 - Source configuration: `configs/mediation_validation.yaml` (`176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94`).
-- Git commit: `fee1fc4351971f658f519676b8d072cdddcdce3b`.
+- Git commit: `78a237ae7cb51897dc879584c153a2e160974995`.
 
 ## Settings
 
@@ -30,27 +30,27 @@ This report is generated from `results/generated/runtime-pilot.json`. It measure
 
 | Cell | N | Repeats | Integration | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |
 |---|---:|---:|---|---:|---:|---:|---|---|
-| `cell01_linear_n100` | 100 | 2 | gaussian_linear_exact | 4.117 | 4.192 | 165105664 | complete | complete |
-| `cell02_linear_n250` | 250 | 2 | gaussian_linear_exact | 4.477 | 4.525 | 167030784 | complete | complete |
-| `cell03_no_a_to_m_n100` | 100 | 2 | gaussian_linear_exact | 3.766 | 3.853 | 165126144 | complete | complete |
-| `cell04_no_m_to_y_n100` | 100 | 2 | gaussian_linear_exact | 4.039 | 4.063 | 164167680 | complete | complete |
-| `cell05_no_mediation_n100` | 100 | 2 | gaussian_linear_exact | 3.875 | 3.936 | 164560896 | complete | complete |
-| `cell06_parallel_interaction_n150` | 150 | 2 | sobol_blocked | 27.609 | 27.695 | 182489088 | complete | complete_with_warnings |
-| `cell07_serial_three_n200` | 200 | 2 | gaussian_linear_exact | 7.156 | 7.256 | 166576128 | complete | complete_with_warnings |
-| `cell08_quadratic_n100` | 100 | 2 | gauss_hermite | 9.242 | 9.330 | 165285888 | complete | complete |
-| `cell09_spline_n250` | 250 | 2 | gauss_hermite | 15.703 | 15.960 | 176005120 | complete | complete |
-| `cell10_moderated_n150` | 150 | 2 | sobol_blocked | 68.258 | 68.768 | 182280192 | complete | complete |
-| `cell11_binary_mediator_n150` | 150 | 2 | exact_binary_mediators | 5.492 | 5.539 | 166146048 | complete | complete |
-| `cell12_mixed_binary_serial_n250` | 250 | 2 | gauss_hermite | 10.578 | 10.666 | 179298304 | complete | complete_with_warnings |
+| `cell01_linear_n100` | 100 | 2 | gaussian_linear_exact | 4.539 | 4.620 | 165216256 | complete | complete |
+| `cell02_linear_n250` | 250 | 2 | gaussian_linear_exact | 5.000 | 5.065 | 166912000 | complete | complete |
+| `cell03_no_a_to_m_n100` | 100 | 2 | gaussian_linear_exact | 4.102 | 4.208 | 164855808 | complete | complete |
+| `cell04_no_m_to_y_n100` | 100 | 2 | gaussian_linear_exact | 4.250 | 4.368 | 164749312 | complete | complete |
+| `cell05_no_mediation_n100` | 100 | 2 | gaussian_linear_exact | 4.180 | 4.254 | 165388288 | complete | complete |
+| `cell06_parallel_interaction_n150` | 150 | 2 | sobol_blocked | 27.570 | 27.985 | 182276096 | complete | complete_with_warnings |
+| `cell07_serial_three_n200` | 200 | 2 | gaussian_linear_exact | 7.883 | 8.084 | 166768640 | complete | complete_with_warnings |
+| `cell08_quadratic_n100` | 100 | 2 | gauss_hermite | 10.367 | 10.626 | 165838848 | complete | complete |
+| `cell09_spline_n250` | 250 | 2 | gauss_hermite | 17.883 | 18.216 | 175411200 | complete | complete |
+| `cell10_moderated_n150` | 150 | 2 | sobol_blocked | 81.148 | 81.320 | 181829632 | complete | complete |
+| `cell11_binary_mediator_n150` | 150 | 2 | exact_binary_mediators | 6.945 | 7.016 | 166641664 | complete | complete |
+| `cell12_mixed_binary_serial_n250` | 250 | 2 | gauss_hermite | 12.969 | 13.090 | 179208192 | complete | complete_with_warnings |
 
 ## Locked-matrix forecast
 
 - Point fits: `2400`.
 - Bootstrap refits: `957600`.
 - Complete analyses: `960000`.
-- Base CPU seconds: `32862.500`.
-- Projected CPU seconds including reruns: `34505.625`.
-- Projected CPU hours: `9.585`; budget pass: `True`.
+- Base CPU seconds: `37367.188`.
+- Projected CPU seconds including reruns: `39235.547`.
+- Projected CPU hours: `10.899`; budget pass: `True`.
 
 Every locked matrix cell is measured directly (no proxy cells), so each cell is forecast from its own integration path. The forecast includes point fits, attempted bootstrap refits, failures, serialization, and the 5% targeted-rerun allowance. A blocked case blocks the forecast; a passing forecast is a runtime boundary, not statistical validation.
 

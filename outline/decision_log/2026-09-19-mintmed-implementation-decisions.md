@@ -377,6 +377,20 @@ Each task entry should record:
 - **Verification:** Full suite `355 passed` under the supported Python 3.11.9 `.venv`. The pilot was run locally on Windows (`platform` recorded in the report). The earlier authoritative pilot ran in GitHub Actions on Linux, and per-cell CPU times may differ there; re-running the pilot via `workflow_dispatch` is recommended before Task 15.
 - **Follow-up:** The margin is 2.4 h, and cell 10 alone accounts for about 40% of the forecast. Any later change to fitting or integration must re-run the full-matrix pilot.
 
+#### Tasks 06/10/14 correction — Statsmodels-only bootstrap refits (audit BUG-04)
+
+- **Date:** 2026-09-25
+- **Task:** Task 6 (node fitting), Task 10 (bootstrap refits) and Task 14 (runtime acceptance); correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-04).
+- **Status:** Completed. Runtime forecast still `pass`.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:** Reverse the Task 14 optimization `a49263f` ("NumPy fixed-budget Gaussian/Bernoulli node fitting"). Remove `_fit_bernoulli_numpy` (custom IRLS), `_fit_gaussian_numpy` (`lstsq`) and the `fit_node(..., fast=...)` switch, so point fits and every bootstrap refit use the same Statsmodels OLS/GLM path. No exception to the non-negotiable rule is claimed.
+- **Rationale:** `outline/plan/README.md` and the methodology both require "use Statsmodels OLS/GLM … do not implement custom IRLS". The NumPy IRLS also applied different separation and convergence rules from the point fits. It declared separation as soon as any weight `p(1-p) <= eps` in any iteration, and used its own coefficient-change criterion and 100-iteration cap. Bootstrap failure accounting was therefore not comparable with point-fit behavior, and interval withholding could be triggered by solver artifacts. A new test confirmed that the NumPy refit did not reproduce the point-fit coefficients on identical rows. The cost of removing it is measurable and acceptable: after the BUG-03 optimizations, the full-matrix forecast rises from 9.585 to 10.899 CPU-hours, still under the 12-hour ceiling. If this ruling is wrong, it costs about 1.3 CPU-hours of margin.
+- **Actions:** Red contracts in `599fbb9`. Implementation in `78a237a`: NumPy fitters and the `fast` switch removed; node diagnostics record `solver` (`statsmodels_ols` / `statsmodels_glm`); bootstrap replicate records carry `node_solvers` (for example `M=statsmodels_glm;Y=statsmodels_ols`), which also appears as a `bootstrap.csv` column. The full-matrix pilot was re-run and `docs/validation/runtime_pilot.md` regenerated.
+- **Evidence:** New tests show that refits call `sm.OLS`/`sm.GLM`, that a refit on identical rows reproduces the point-fit coefficients exactly, and that the solver is recorded. The two-repeat pilot on `78a237a` completed all 12 cells × 399 refits with **0 failed refits**: 37,367.2 base CPU-s, **10.899 projected CPU-hours** including the 5% rerun allowance, budget pass. Cell 10 is 81.1 s per dataset and cell 11 6.9 s.
+- **Files:** `src/mintmed/models.py`; `src/mintmed/gformula.py`; `src/mintmed/uncertainty.py`; `tests/mediation/test_nodes.py`; `tests/mediation/test_uncertainty.py`; `docs/validation/runtime_pilot.md`; this decision log.
+- **Verification:** Full suite `358 passed` under the supported Python 3.11.9 `.venv`.
+- **Follow-up:** The runtime margin is now about 1.1 CPU-hours, measured locally on Windows. Re-run the pilot on GitHub Actions before Task 15. Any further bootstrap cost (for example from BUG-12) must be re-forecast.
+
 ## Reusable entry template
 
 ### Task NN — Name
