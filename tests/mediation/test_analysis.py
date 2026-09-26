@@ -560,3 +560,65 @@ def test_invalid_draw_budget_is_reported_as_an_invalid_specification() -> None:
     )
 
     assert _failure_state(error, "point") == "invalid_specification"
+
+
+def test_point_only_state_no_longer_hides_warnings() -> None:
+    # Contribution refused (serial) and intervals withheld (standard mode, 2 replicates).
+    data, spec = _fixture("serial_two", n=120, bootstrap=2)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.diagnostics["overall_status"] == "point_only"
+    assert result.diagnostics["uncertainty_state"] == "unavailable"
+    assert result.diagnostics["warning_state"] == "warnings"
+
+
+def test_warnings_without_bootstrap_still_say_no_uncertainty_was_computed() -> None:
+    data, spec = _fixture("serial_two", n=120)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.diagnostics["overall_status"] == "complete_with_warnings"
+    assert result.diagnostics["uncertainty_state"] == "not_requested"
+    assert result.diagnostics["warning_state"] == "warnings"
+
+
+def test_clean_point_analysis_reports_no_warnings_and_no_uncertainty() -> None:
+    data, spec = _fixture(n=120)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.diagnostics["overall_status"] == "point_only"
+    assert result.diagnostics["uncertainty_state"] == "not_requested"
+    assert result.diagnostics["warning_state"] == "none"
+
+
+def test_quick_diagnostic_uncertainty_is_provisional() -> None:
+    data, spec = _fixture(n=120, bootstrap=2)
+    spec = replace(spec, computation=replace(spec.computation, bootstrap_mode="quick_diagnostic"))
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.diagnostics["uncertainty_state"] == "provisional"
+
+
+def test_failed_analysis_reports_uncertainty_not_run() -> None:
+    data, spec = _fixture(n=120, bootstrap=2)
+
+    result = mintmed.analyze_mediation(data.drop(columns=["M"]), spec)
+
+    assert result.diagnostics["overall_status"] == "invalid_data"
+    assert result.diagnostics["uncertainty_state"] == "not_run"
+    assert result.diagnostics["warning_state"] == "none"
+
+
+def test_report_exposes_both_state_components() -> None:
+    from mintmed.report import render_markdown, result_to_dict
+
+    data, spec = _fixture("serial_two", n=120, bootstrap=2)
+    result = mintmed.analyze_mediation(data, spec)
+
+    payload = result_to_dict(result)
+    assert payload["uncertainty_state"] == "unavailable"
+    assert payload["warning_state"] == "warnings"
+    assert "uncertainty `unavailable`, warnings `warnings`" in render_markdown(result)

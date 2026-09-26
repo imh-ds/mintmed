@@ -129,3 +129,28 @@ def test_cli_runs_the_moderated_serial_example(tmp_path: Path) -> None:
     from scripts.check_example_outputs import check_output_dir
 
     assert check_output_dir(output) == []
+
+
+def test_cli_notes_unavailable_intervals_while_exiting_zero(tmp_path: Path, capsys) -> None:
+    import yaml
+
+    repository = Path(__file__).parents[2]
+    spec = yaml.safe_load((repository / "examples/single/analysis.yaml").read_text(encoding="utf-8"))
+    spec["computation"]["bootstrap"] = 2
+    spec["computation"]["bootstrap_mode"] = "standard"
+    spec_path = tmp_path / "standard.yaml"
+    spec_path.write_text(yaml.safe_dump(spec), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "--data",
+            str(repository / "examples/single/data.csv"),
+            "--spec",
+            str(spec_path),
+            "--output",
+            str(tmp_path / "out"),
+        ]
+    )
+
+    assert exit_code == 0
+    assert "uncertainty unavailable" in capsys.readouterr().err
