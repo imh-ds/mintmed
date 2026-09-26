@@ -302,6 +302,10 @@ def _run_replicate(
             "runtime_seconds": float(time.perf_counter() - started),
             "accepted_draw_budget": int(fitted.draw_budget),
             "integration_draw_count": int(draws.draw_count),
+            "node_solvers": ";".join(
+                f"{node.response}={node.diagnostics().metadata.get('solver', 'unknown')}"
+                for node in fitted.nodes
+            ),
         }
     )
     record.update({effect.name: float(effect.estimate) for effect in effects})
