@@ -44,11 +44,21 @@ SUPPORTED_PYTHON = ">=3.11,<3.12"
 DEFAULT_CONFIG = ROOT / "configs" / "mediation_validation.yaml"
 DEFAULT_OUTPUT = ROOT / "results" / "generated" / "runtime-pilot.json"
 DEFAULT_MARKDOWN = ROOT / "docs" / "validation" / "runtime_pilot.md"
+# Every locked matrix cell is measured directly.  The earlier five-case proxy
+# design forecast the Sobol-path cells (06, 10) from exact/quadrature proxies
+# and understated their cost by more than an order of magnitude (audit BUG-03).
 PILOT_CELL_IDS: tuple[str, ...] = (
     "cell01_linear_n100",
     "cell02_linear_n250",
+    "cell03_no_a_to_m_n100",
+    "cell04_no_m_to_y_n100",
+    "cell05_no_mediation_n100",
+    "cell06_parallel_interaction_n150",
     "cell07_serial_three_n200",
+    "cell08_quadratic_n100",
     "cell09_spline_n250",
+    "cell10_moderated_n150",
+    "cell11_binary_mediator_n150",
     "cell12_mixed_binary_serial_n250",
 )
 MATRIX_CELL_COUNT = 12
@@ -59,25 +69,14 @@ INTEGRATION_TOLERANCE = 1.0e-3
 RERUN_FRACTION = 0.05
 CPU_CEILING_HOURS = 12.0
 
-PROXY_MAP: Mapping[str, tuple[str, ...]] = {
-    "cell01_linear_n100": (
-        "cell01_linear_n100",
-        "cell03_no_a_to_m_n100",
-        "cell04_no_m_to_y_n100",
-        "cell05_no_mediation_n100",
-    ),
-    "cell02_linear_n250": ("cell02_linear_n250",),
-    "cell07_serial_three_n200": (
-        "cell06_parallel_interaction_n150",
-        "cell07_serial_three_n200",
-    ),
-    "cell09_spline_n250": ("cell08_quadratic_n100", "cell09_spline_n250"),
-    "cell12_mixed_binary_serial_n250": (
-        "cell10_moderated_n150",
-        "cell11_binary_mediator_n150",
-        "cell12_mixed_binary_serial_n250",
-    ),
-}
+PROXY_MAP: Mapping[str, tuple[str, ...]] = {cell_id: (cell_id,) for cell_id in PILOT_CELL_IDS}
+WORKER_TIMEOUT_MARGIN_SECONDS = 900
+
+
+def _worker_timeout_seconds(config: ValidationConfig) -> int:
+    """Allow the full bootstrap time cap plus point fitting and serialization."""
+
+    return int(config.max_seconds) + WORKER_TIMEOUT_MARGIN_SECONDS
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,7 +373,7 @@ def _run_case(config_path: Path, cell_id: str, repeat: int, *, allow_unsupported
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=900,
+            timeout=_worker_timeout_seconds(load_config(config_path)),
         )
         parent_wall = time.perf_counter() - started
         if completed.returncode != 0 or not worker_output.is_file():
@@ -506,6 +505,10 @@ def forecast_cpu_hours(
         cell_id: statistics.median(item.cpu_seconds for item in values)
         for cell_id, values in by_cell.items()
     }
+    integration_methods = {
+        cell_id: sorted({item.integration_method for item in values})
+        for cell_id, values in by_cell.items()
+    }
     proxy_cpu_seconds = {proxy: median_cpu[proxy] for proxy in PILOT_CELL_IDS}
     base_cpu_seconds = sum(proxy_cpu_seconds[proxy] * len(cells) * datasets_per_cell for proxy, cells in PROXY_MAP.items())
     projected_cpu_seconds = base_cpu_seconds * (1.0 + rerun_fraction)
@@ -518,6 +521,7 @@ def forecast_cpu_hours(
         "matrix_complete_analyses": MATRIX_CELL_COUNT * datasets_per_cell * (BOOTSTRAP_REPLICATES + 1),
         "datasets_per_cell": datasets_per_cell,
         "median_cpu_seconds_by_proxy": median_cpu,
+        "integration_methods": integration_methods,
         "proxy_cpu_seconds": proxy_cpu_seconds,
         "base_cpu_seconds": base_cpu_seconds,
         "rerun_fraction": rerun_fraction,
@@ -586,15 +590,16 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
     for key, value in sorted(environment.items()):
         rendered = json.dumps(value, sort_keys=True) if isinstance(value, Mapping) else str(value)
         lines.append(f"| `{key}` | `{rendered}` |")
-    lines.extend(["", "## Measured cases", "", "| Cell | N | Repeats | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |", "|---|---:|---:|---:|---:|---:|---|---|"])
+    lines.extend(["", "## Measured cases", "", "| Cell | N | Repeats | Integration | Median CPU (s) | Median wall (s) | Peak RSS (bytes) | Status | Analysis status |", "|---|---:|---:|---|---:|---:|---:|---|---|"])
     for case in cases:
         status = ", ".join(case.get("statuses", [])) or "blocked"
         analysis_status = ", ".join(case.get("analysis_statuses", [])) or "unavailable"
         lines.append(
-            "| `{cell_id}` | {n} | {repeat_count} | {cpu} | {wall} | {rss} | {status} | {analysis_status} |".format(
+            "| `{cell_id}` | {n} | {repeat_count} | {method} | {cpu} | {wall} | {rss} | {status} | {analysis_status} |".format(
                 cell_id=case.get("cell_id"),
                 n=case.get("n"),
                 repeat_count=case.get("repeat_count"),
+                method=", ".join(sorted({str(item.get("integration_method")) for item in case.get("repeats", [])})) or "unavailable",
                 cpu=_format_number(case.get("median_cpu_seconds")),
                 wall=_format_number(case.get("median_wall_seconds")),
                 rss=case.get("max_peak_rss_bytes") if case.get("max_peak_rss_bytes") is not None else "blocked",
@@ -616,7 +621,7 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
             f"- Projected CPU seconds including reruns: `{_format_number(forecast.get('projected_cpu_seconds'))}`.",
             f"- Projected CPU hours: `{_format_number(forecast.get('projected_cpu_hours'))}`; budget pass: `{forecast.get('budget_pass')}`.",
             "",
-            "The forecast uses the declared conservative proxy map and includes point fits, attempted bootstrap refits, failures, serialization, and the 5% targeted-rerun allowance. A blocked case blocks the forecast; a passing forecast is a runtime boundary, not statistical validation.",
+            "Every locked matrix cell is measured directly (no proxy cells), so each cell is forecast from its own integration path. The forecast includes point fits, attempted bootstrap refits, failures, serialization, and the 5% targeted-rerun allowance. A blocked case blocks the forecast; a passing forecast is a runtime boundary, not statistical validation.",
             "",
             "## Proxy map",
             "",

@@ -9,10 +9,12 @@ import pytest
 
 from scripts.run_runtime_pilot import (
     PILOT_CELL_IDS,
+    PROXY_MAP,
     PilotMeasurement,
     _json_text,
     _pilot_config,
     _summarize_cases,
+    _worker_timeout_seconds,
     forecast_cpu_hours,
     DEFAULT_CONFIG,
     load_config,
@@ -47,14 +49,26 @@ def _complete_measurements(*, cpu_seconds: float = 10.0) -> list[PilotMeasuremen
     return [_measurement(cell_id, cpu_seconds=cpu_seconds) for cell_id in PILOT_CELL_IDS]
 
 
-def test_pilot_cell_set_covers_required_profiles() -> None:
-    assert PILOT_CELL_IDS == (
-        "cell01_linear_n100",
-        "cell02_linear_n250",
-        "cell07_serial_three_n200",
-        "cell09_spline_n250",
-        "cell12_mixed_binary_serial_n250",
-    )
+def test_pilot_measures_every_matrix_cell_without_proxies() -> None:
+    # Audit BUG-03: proxies hid the Sobol-path cost of cells 06 and 10, so
+    # every locked matrix cell is now measured directly.
+    source = load_config(DEFAULT_CONFIG)
+    assert PILOT_CELL_IDS == source.cell_ids
+    assert PROXY_MAP == {cell_id: (cell_id,) for cell_id in source.cell_ids}
+
+
+def test_forecast_records_each_cell_integration_method() -> None:
+    measurements = _complete_measurements(cpu_seconds=1.0)
+    measurements[5] = replace(measurements[5], integration_method="gauss_hermite")
+    forecast = forecast_cpu_hours(measurements)
+
+    assert forecast["integration_methods"][PILOT_CELL_IDS[5]] == ["gauss_hermite"]
+    assert forecast["integration_methods"][PILOT_CELL_IDS[0]] == ["sobol_blocked"]
+
+
+def test_worker_timeout_exceeds_the_bootstrap_time_cap() -> None:
+    source = load_config(DEFAULT_CONFIG)
+    assert _worker_timeout_seconds(source) > source.max_seconds
 
 
 def test_pilot_config_hash_is_derived_from_one_cell_design() -> None:
