@@ -959,6 +959,13 @@ def _prepare_spec(fixture: SimulationFixture, config: ValidationConfig, analysis
     return replace(fixture.spec, computation=computation)
 
 
+def _bootstrap_count(payload: Mapping[str, Any], key: str) -> int | None:
+    bootstrap = payload.get("bootstrap")
+    if not isinstance(bootstrap, Mapping) or bootstrap.get(key) is None:
+        return None
+    return int(bootstrap[key])
+
+
 def row_from_payload(
     payload: Mapping[str, Any],
     *,
@@ -995,6 +1002,8 @@ def row_from_payload(
         "bootstrap_mode": config.bootstrap_mode,
         "integration_method": provenance.get("integration_method") if isinstance(provenance, Mapping) else None,
         "accepted_draw_budget": draw_budget,
+        "bootstrap_successful": _bootstrap_count(payload, "successful"),
+        "bootstrap_failed": _bootstrap_count(payload, "failed"),
     }
     return {
         "cell_id": cell.cell_id,

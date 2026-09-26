@@ -78,6 +78,11 @@ def expand_metrics(raw: pd.DataFrame, config: ValidationConfig) -> pd.DataFrame:
             raise ValueError(f"invalid metrics_json for {cell_id}") from exc
         if not isinstance(metrics, Mapping) or set(metrics) != set(definition.metric_names):
             raise ValueError(f"metrics_json for {cell_id} does not match its fixed metric names")
+        try:
+            provenance = json.loads(str(source["provenance_json"]))
+        except (TypeError, json.JSONDecodeError):
+            provenance = {}
+        bootstrap_failed = provenance.get("bootstrap_failed") if isinstance(provenance, Mapping) else None
         for metric in definition.metric_names:
             record = metrics[metric]
             if not isinstance(record, Mapping):
@@ -103,6 +108,7 @@ def expand_metrics(raw: pd.DataFrame, config: ValidationConfig) -> pd.DataFrame:
                     "fit_count": source["fit_count"],
                     "draw_budget": source["draw_budget"],
                     "population_outcome_sd": definition.population_outcome_sd,
+                    "bootstrap_failed": bootstrap_failed,
                 }
             )
     return pd.DataFrame(rows)
@@ -148,6 +154,10 @@ def summarize_metrics(
         available_lower, available_upper = wilson(available_successes, available_trials)
         draw_values = pd.to_numeric(group["draw_budget"], errors="coerce").dropna()
         zero_successes = int(group["zero_exclusion"].astype(bool).sum())
+        # Under the <400-replicate rule a single failed refit withholds every
+        # interval; count datasets lost to only one or two failures.
+        few_failures = pd.to_numeric(group.get("bootstrap_failed"), errors="coerce").isin([1, 2])
+        few_failure_withheld = int((unavailable & few_failures).sum())
         zero_lower, zero_upper = wilson(zero_successes, attempted)
         finite_biases = biases.dropna()
         mean_bias = None if finite_biases.empty else float(finite_biases.mean())
@@ -174,6 +184,8 @@ def summarize_metrics(
                 "mean_absolute_error": None if finite_biases.empty else float(finite_biases.abs().mean()),
                 "rmse": None if biases.dropna().empty else float(np.sqrt(np.mean(np.square(biases.dropna())))),
                 "mean_width": _mean_or_none(group.loc[available, "width"]),
+                "few_failure_withheld_rows": few_failure_withheld,
+                "few_failure_withheld_rate": float(few_failure_withheld / attempted) if attempted else None,
                 "zero_exclusions": zero_successes,
                 "zero_exclusion_rate": float(zero_successes / attempted) if attempted else None,
                 "zero_exclusion_mc_se": None if attempted == 0 else float(math.sqrt((zero_successes / attempted) * (1.0 - zero_successes / attempted) / attempted)),
@@ -367,6 +379,8 @@ def _report_markdown(
             "",
             "Unavailable intervals count as noncoverage; failed rows remain in attempted and fatal denominators.",
             "",
+            _interval_rule_sentence(config),
+            "",
             "## Stress diagnostics",
             "",
             f"Stress diagnostics are separate from inferential denominators: **{stress_separate}**.",
@@ -414,6 +428,29 @@ def _require_single_configuration(raw: pd.DataFrame, config: ValidationConfig) -
                 )
 
 
+def _interval_rule(config: ValidationConfig) -> str:
+    """Name the bootstrap interval rule the configured replicate count implies."""
+
+    if config.bootstrap_mode == "quick_diagnostic":
+        return "quick_diagnostic_provisional"
+    if config.bootstrap_replicates >= 400:
+        return "ge_390_successes_and_le_1pct_failures"
+    return f"all_{config.bootstrap_replicates}_refits_must_succeed"
+
+
+def _interval_rule_sentence(config: ValidationConfig) -> str:
+    rule = _interval_rule(config)
+    if rule.startswith("all_"):
+        return (
+            f"Interval rule: zero-failure. With {config.bootstrap_replicates} standard replicates (< 400), a single "
+            "failed refit withholds every interval for that dataset; `few_failure_withheld_rows` counts the datasets "
+            "whose intervals were withheld because only one or two refits failed."
+        )
+    if rule == "quick_diagnostic_provisional":
+        return "Interval rule: quick-diagnostic; every interval is provisional and is not release evidence."
+    return "Interval rule: at least 390 successful refits and at most 1% failures."
+
+
 def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) -> None:
     """Write the complete evidence artifact set from raw rows only."""
 
@@ -447,6 +484,7 @@ def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) 
             "bootstrap_replicates": config.bootstrap_replicates,
             "bootstrap_mode": config.bootstrap_mode,
             "integration_draws": config.integration_draws,
+            "interval_rule": _interval_rule(config),
         },
     }
     _atomic_text(output / "summary.json", json.dumps(summary_payload, indent=2, sort_keys=True) + "\n")
