@@ -354,7 +354,8 @@ _INTEGRATION_DRAW_BUDGETS = (256, 512, 1024, 2048, 4096)
 _INTERPRETATIONS = {"assumption_based_causal", "model_standardized"}
 _MISSING_POLICIES = {"error", "complete_case"}
 _ARRANGEMENTS = {"parallel", "sequential"}
-_PRIMARY_EFFECTS = {"TE", "PNDE", "TNIE", "TNDE", "TNIE", "PDE"}
+# The engine computes only the primary TE = PNDE + TNIE decomposition.
+_PRIMARY_EFFECTS = ("TE", "PNDE", "TNIE")
 
 
 def load_model_spec(path: Path) -> ModelSpec:
@@ -967,9 +968,6 @@ def _parse_contrast(
         _string(item, f"{path}.primary_effects[{index}]")
         for index, item in enumerate(_sequence(primary_effects, f"{path}.primary_effects"))
     )
-    invalid_effects = set(primary_effects) - _PRIMARY_EFFECTS
-    if invalid_effects:
-        _fail("malformed_contrast", f"{path}.primary_effects", "unknown primary effect name")
     interpretation = _string(mapping.get("interpretation", default_interpretation), f"{path}.interpretation")
     if interpretation not in _INTERPRETATIONS:
         _fail("invalid_interpretation", f"{path}.interpretation", f"unsupported mode {interpretation!r}")
@@ -1253,8 +1251,13 @@ def _validate_contrast(contrast: ContrastSpec, exposure: VariableSpec, moderator
         if known[name].levels and value not in known[name].levels:
             _fail("invalid_moderator_value", f"contrast.moderator_values.{name}", "value is not a declared level")
     _validate_moderator_evaluation(contrast, moderators)
-    if set(contrast.primary_effects) - _PRIMARY_EFFECTS:
-        _fail("malformed_contrast", "contrast.primary_effects", "unknown primary effect name")
+    effects = tuple(contrast.primary_effects)
+    if len(effects) != len(set(effects)) or set(effects) != set(_PRIMARY_EFFECTS):
+        _fail(
+            "unsupported_primary_effects",
+            "contrast.primary_effects",
+            "primary_effects must be exactly TE, PNDE and TNIE; no other decomposition is computed",
+        )
     if contrast.interpretation not in _INTERPRETATIONS:
         _fail("invalid_interpretation", "contrast.interpretation", "unsupported interpretation mode")
 
