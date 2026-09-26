@@ -149,7 +149,8 @@ def summarize_metrics(
         draw_values = pd.to_numeric(group["draw_budget"], errors="coerce").dropna()
         zero_successes = int(group["zero_exclusion"].astype(bool).sum())
         zero_lower, zero_upper = wilson(zero_successes, attempted)
-        abs_bias = biases.abs().dropna()
+        finite_biases = biases.dropna()
+        mean_bias = None if finite_biases.empty else float(finite_biases.mean())
         records.append(
             {
                 "cell_id": str(cell_id),
@@ -161,8 +162,16 @@ def summarize_metrics(
                 "interval_available_rows": available_trials,
                 "unavailable_interval_rows": int(unavailable.sum()),
                 "unavailable_or_fatal_rows": int((unavailable | fatal).sum()),
-                "mean_bias": _mean_or_none(biases),
-                "absolute_bias": None if abs_bias.empty else float(abs_bias.mean()),
+                "mean_bias": mean_bias,
+                # Simulation-study bias is |mean(estimate - truth)|; the mean
+                # absolute error is descriptive and also carries sampling spread.
+                "absolute_bias": None if mean_bias is None else abs(mean_bias),
+                "bias_mc_se": (
+                    None
+                    if len(finite_biases) < 2
+                    else float(finite_biases.std(ddof=1) / math.sqrt(len(finite_biases)))
+                ),
+                "mean_absolute_error": None if finite_biases.empty else float(finite_biases.abs().mean()),
                 "rmse": None if biases.dropna().empty else float(np.sqrt(np.mean(np.square(biases.dropna())))),
                 "mean_width": _mean_or_none(group.loc[available, "width"]),
                 "zero_exclusions": zero_successes,
@@ -195,6 +204,39 @@ def _eligible(summary: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def _present(value: Any) -> bool:
+    return value is not None and not (isinstance(value, float) and math.isnan(value))
+
+
+def _scaled_mc_se(value: Any, scale: float) -> float | None:
+    return float(value) / scale if _present(value) else None
+
+
+def _bias_gate(values: list[tuple[float, float | None]], threshold: float) -> dict[str, Any]:
+    """Gate the worst |mean bias| and report its Monte Carlo SE descriptively."""
+
+    if not values:
+        return {
+            "threshold": threshold,
+            "observed": None,
+            "observed_mc_se": None,
+            "threshold_within_mc_band": None,
+            "passed": False,
+        }
+    observed, mc_se = max(values, key=lambda item: item[0])
+    return {
+        "threshold": threshold,
+        "observed": observed,
+        "observed_mc_se": mc_se,
+        # Descriptive only: whether the threshold lies within 1.96 MC SEs of the
+        # worst observed bias, i.e. the verdict is not Monte Carlo decisive.
+        "threshold_within_mc_band": (
+            None if mc_se is None else bool(abs(observed - threshold) <= 1.96 * mc_se)
+        ),
+        "passed": observed <= threshold,
+    }
+
+
 def evaluate_gates(
     summary: pd.DataFrame,
     raw: pd.DataFrame,
@@ -210,12 +252,19 @@ def evaluate_gates(
 
     continuous = eligible.loc[eligible["outcome_kind"] == "continuous"]
     binary = eligible.loc[eligible["outcome_kind"] == "binary"]
-    continuous_values = [
-        float(row.absolute_bias) / float(row.population_outcome_sd)
+    continuous_bias = [
+        (
+            float(row.absolute_bias) / float(row.population_outcome_sd),
+            _scaled_mc_se(row.bias_mc_se, float(row.population_outcome_sd)),
+        )
         for row in continuous.itertuples()
-        if row.absolute_bias is not None and row.population_outcome_sd not in (None, 0)
+        if _present(row.absolute_bias) and row.population_outcome_sd not in (None, 0)
     ]
-    binary_values = [float(row.absolute_bias) for row in binary.itertuples() if row.absolute_bias is not None]
+    binary_bias = [
+        (float(row.absolute_bias), _scaled_mc_se(row.bias_mc_se, 1.0))
+        for row in binary.itertuples()
+        if _present(row.absolute_bias)
+    ]
     coverage_values = [
         float(value) for value in eligible["coverage_wilson_lower"].dropna().tolist()
     ]
@@ -225,16 +274,8 @@ def evaluate_gates(
     unavailable_rates = [float(value) for value in eligible["unavailable_or_fatal_rate"].dropna().tolist()]
 
     results = {
-        "continuous_abs_bias_sd": {
-            "threshold": gates["continuous_abs_bias_sd"],
-            "observed": max(continuous_values, default=None),
-            "passed": bool(continuous_values) and max(continuous_values) <= gates["continuous_abs_bias_sd"],
-        },
-        "binary_abs_bias_probability": {
-            "threshold": gates["binary_abs_bias_probability"],
-            "observed": max(binary_values, default=None),
-            "passed": bool(binary_values) and max(binary_values) <= gates["binary_abs_bias_probability"],
-        },
+        "continuous_abs_bias_sd": _bias_gate(continuous_bias, gates["continuous_abs_bias_sd"]),
+        "binary_abs_bias_probability": _bias_gate(binary_bias, gates["binary_abs_bias_probability"]),
         "coverage_wilson_lower": {
             "threshold": gates["coverage_wilson_lower"],
             "observed": min(coverage_values, default=None),
@@ -309,11 +350,16 @@ def _report_markdown(
         "",
         f"Overall gate result: **{'PASS' if gate_result['overall_pass'] else 'FAIL'}**. Power is descriptive only and is not a release gate.",
         "",
-        "| Gate | Observed | Threshold | Passed |",
-        "|---|---:|---:|:---:|",
+        "Bias gates compare the absolute mean bias |mean(estimate - truth)| with the threshold; the mean absolute error is reported descriptively in the summaries. The MC SE column is the Monte Carlo standard error of the worst mean bias.",
+        "",
+        "| Gate | Observed | MC SE | Threshold | Passed |",
+        "|---|---:|---:|---:|:---:|",
     ]
     for name, result in gate_result["gates"].items():
-        lines.append(f"| {name} | {result['observed']} | {result['threshold']} | {result['passed']} |")
+        mc_se = result.get("observed_mc_se")
+        lines.append(
+            f"| {name} | {result['observed']} | {'' if mc_se is None else mc_se} | {result['threshold']} | {result['passed']} |"
+        )
     lines.extend(
         [
             "",
