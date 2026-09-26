@@ -378,11 +378,25 @@ def _matches_level(value: Any, level: Any) -> bool:
     return False
 
 
+def _distinct_values(series: pd.Series) -> list[Any]:
+    """Return each distinct observed value once, preserving first occurrence.
+
+    Validating distinct values instead of every row keeps the frozen-category
+    check linear-time on the large participant-by-draw frames built during
+    Sobol standardization, with identical accept/reject semantics.
+    """
+
+    try:
+        return list(pd.unique(series.to_numpy()))
+    except TypeError:
+        return series.tolist()
+
+
 def _check_frozen_categories(design: FrozenDesign, data: pd.DataFrame) -> None:
     for variable, levels in design.category_levels.items():
         if variable not in data.columns:
             continue
-        for value in data[variable].tolist():
+        for value in _distinct_values(data[variable]):
             if _is_missing_scalar(value):
                 continue
             if not any(_matches_level(value, level) for level in levels):

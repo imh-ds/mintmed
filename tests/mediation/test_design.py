@@ -440,3 +440,42 @@ def test_empty_fit_frame_is_rejected() -> None:
         fit_design(pd.DataFrame({"x": []}), node)
 
     assert error.value.code == "empty_design"
+
+
+def test_frozen_category_check_scales_with_distinct_values(monkeypatch) -> None:
+    # Audit BUG-03: the per-row category check dominated Sobol-path runtime.
+    node = make_node(
+        terms=(
+            TermSpec("condition", TermKind.CATEGORICAL),
+            TermSpec("x", TermKind.LINEAR),
+        ),
+        category_levels={"condition": (0, 1)},
+    )
+    design = fit_design(
+        pd.DataFrame({"condition": [0, 1, 0, 1], "x": [0.0, 1.0, 2.0, 3.0]}),
+        node,
+    )
+    calls = 0
+    original = design_module._matches_level
+
+    def counting(value, level):
+        nonlocal calls
+        calls += 1
+        return original(value, level)
+
+    monkeypatch.setattr(design_module, "_matches_level", counting)
+    rows = 50_000
+    large = pd.DataFrame(
+        {
+            "condition": np.resize(np.array([0.0, 1.0, np.nan]), rows),
+            "x": np.linspace(0.0, 1.0, rows),
+        }
+    )
+    design_module._check_frozen_categories(design, large)
+    assert calls <= 4  # two distinct observed values x two frozen levels
+
+    unseen = large.assign(condition=np.resize(np.array([0.0, 1.0, 2.0]), rows))
+    with pytest.raises(NodeFitError) as error:
+        design_module._check_frozen_categories(design, unseen)
+    assert error.value.code == "unseen_category"
+    assert error.value.variable == "condition"
