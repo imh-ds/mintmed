@@ -990,7 +990,11 @@ def _gauss_hermite_branches(
     mediator_exposure: object,
     moderator_values: Mapping[str, object],
 ) -> tuple[pd.DataFrame, np.ndarray, int]:
-    """Build one participant-level Hermite and binary mediator branch table."""
+    """Build one participant-level Hermite and binary mediator branch table.
+
+    With only Bernoulli mediators the table is exact enumeration, so it also
+    serves ``exact_binary_mediators`` contribution evaluation.
+    """
 
     retained = _retained_frame(data, plan)
     if len(retained) == 0:
@@ -1228,7 +1232,7 @@ def _gauss_hermite_regime(
     return float(np.dot(branch_weights, outcome) / len(retained))
 
 
-def _gaussian_linear_regime(
+def _gaussian_linear_outcome_frame(
     data: pd.DataFrame,
     plan: AnalysisPlan,
     fitted: FittedSystem,
@@ -1236,7 +1240,14 @@ def _gaussian_linear_regime(
     outcome_exposure: object,
     mediator_exposure: object,
     moderator_values: Mapping[str, object],
-) -> float:
+) -> pd.DataFrame:
+    """Return outcome predictors with mediators at their propagated means.
+
+    Valid only for the all-linear Gaussian system selected by
+    :func:`_is_gaussian_linear`, where the outcome mean is linear in the
+    mediators and plugging in propagated mediator means is exact.
+    """
+
     retained = _retained_frame(data, plan)
     simulated: dict[str, np.ndarray] = {}
     for mediator_name in _mediator_order(plan):
@@ -1265,6 +1276,26 @@ def _gaussian_linear_regime(
     outcome_frame = _regime_frame(retained, plan, outcome_exposure, moderator_values)
     for mediator_name, mediator_mean in simulated.items():
         outcome_frame[mediator_name] = mediator_mean
+    return outcome_frame
+
+
+def _gaussian_linear_regime(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    *,
+    outcome_exposure: object,
+    mediator_exposure: object,
+    moderator_values: Mapping[str, object],
+) -> float:
+    outcome_frame = _gaussian_linear_outcome_frame(
+        data,
+        plan,
+        fitted,
+        outcome_exposure=outcome_exposure,
+        mediator_exposure=mediator_exposure,
+        moderator_values=moderator_values,
+    )
     try:
         outcome_mean = fitted.outcome_node.predict_mean(outcome_frame)
     except NodeFitError as exc:

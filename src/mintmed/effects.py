@@ -19,6 +19,8 @@ from .gformula import (
     CommonDraws,
     FittedSystem,
     GFormulaError,
+    _gauss_hermite_branches,
+    _gaussian_linear_outcome_frame,
     _iter_standardized_blocks,
     _mediator_order,
     standardize_regime,
@@ -256,10 +258,14 @@ def _contribution_failure(failure: _ContributionFailure) -> ContributionResult:
     )
 
 
+_QUADRATURE_METHODS = frozenset({"gauss_hermite", "exact_binary_mediators"})
+_CONTRIBUTION_METHODS = frozenset({"sobol_blocked", "gaussian_linear_exact", *_QUADRATURE_METHODS})
+
+
 def _validate_contribution_draws(
     plan: AnalysisPlan,
     fitted: FittedSystem,
-    draws: CommonDraws,
+    draws: CommonDraws | None,
 ) -> None:
     if fitted.status is not AnalysisStatus.OK:
         raise _ContributionFailure(
@@ -267,6 +273,16 @@ def _validate_contribution_draws(
             "the fitted system is not available for contribution evaluation",
             status=fitted.status.value,
         )
+    if fitted.integration_method not in _CONTRIBUTION_METHODS:
+        raise _ContributionFailure(
+            "contribution_integration_unresolved",
+            "no contribution evaluator exists for the fitted integration method",
+            integration_method=fitted.integration_method,
+        )
+    if fitted.integration_method != "sobol_blocked":
+        # Exact and quadrature paths never consume random draws; any supplied
+        # draws are ignored so a placeholder cannot change the estimate.
+        return
     if not isinstance(draws, CommonDraws):
         raise _ContributionFailure(
             "contribution_integration_unresolved",
@@ -295,12 +311,19 @@ def parallel_contributions(
     data: pd.DataFrame,
     plan: AnalysisPlan,
     fitted: FittedSystem,
-    draws: CommonDraws,
+    draws: CommonDraws | None,
     joint_tnie: float,
     *,
     numerical_tolerance: float = 1e-10,
 ) -> ContributionResult:
-    """Return additive mediator TNIE blocks when the model is admissible."""
+    """Return additive mediator TNIE blocks when the model is admissible.
+
+    Components are integrated with the same method as the joint TNIE:
+    the accepted common Sobol draws, exact linear mean propagation, or the
+    Bernoulli/Gauss-Hermite branch table.  ``draws`` is required only for the
+    Sobol path and ignored otherwise.  ``numerical_tolerance`` bounds the
+    additive-identity residual relative to ``max(1, |TNIE|, |components|)``.
+    """
 
     tolerance = _validate_tolerance(numerical_tolerance)
     try:
@@ -319,33 +342,26 @@ def parallel_contributions(
         )
 
     mediator_names = tuple(_mediator_order(plan))
-    component_sums = {
-        exposure: {name: 0.0 for name in mediator_names}
-        for exposure in (plan.contrast.reference, plan.contrast.comparison)
+    evaluators = {
+        "sobol_blocked": _sobol_component_means,
+        "gaussian_linear_exact": _linear_component_means,
+        "gauss_hermite": _quadrature_component_means,
+        "exact_binary_mediators": _quadrature_component_means,
     }
-    component_counts = {exposure: 0 for exposure in component_sums}
+    component_means: dict[object, dict[str, float]] = {}
     try:
-        for mediator_exposure in component_sums:
-            for outcome_frame in _iter_standardized_blocks(
+        for mediator_exposure in (plan.contrast.reference, plan.contrast.comparison):
+            component_means[mediator_exposure] = evaluators[fitted.integration_method](
                 data,
                 plan,
                 fitted,
-                outcome_exposure=plan.contrast.comparison,
+                partition,
+                mediator_names,
                 mediator_exposure=mediator_exposure,
-                moderator_values=plan.contrast.moderator_values,
                 draws=draws,
-            ):
-                matrix = transform_design(fitted.outcome_node.design, outcome_frame).to_numpy(
-                    dtype=float,
-                    copy=False,
-                )
-                component_counts[mediator_exposure] += len(outcome_frame)
-                coefficients = np.asarray(fitted.outcome_node.coefficients, dtype=float)
-                for name in mediator_names:
-                    component = np.zeros(len(outcome_frame), dtype=float)
-                    for column_slice in partition.mediator_slices[name]:
-                        component += matrix[:, column_slice] @ coefficients[column_slice]
-                    component_sums[mediator_exposure][name] += float(component.sum())
+            )
+    except _ContributionFailure as failure:
+        return _contribution_failure(failure)
     except (GFormulaError, NodeFitError, ValueError, TypeError) as exc:
         return _contribution_failure(
             _ContributionFailure(
@@ -355,27 +371,17 @@ def parallel_contributions(
             )
         )
 
-    if any(count <= 0 for count in component_counts.values()):
-        return _contribution_failure(
-            _ContributionFailure(
-                "contribution_integration_unresolved",
-                "standardized component evaluation produced no cells",
-            )
-        )
-    component_means = {
-        exposure: {
-            name: component_sums[exposure][name] / component_counts[exposure]
-            for name in mediator_names
-        }
-        for exposure in component_sums
-    }
     values = {
         name: component_means[plan.contrast.comparison][name]
         - component_means[plan.contrast.reference][name]
         for name in mediator_names
     }
     residual = float(sum(values.values()) - float(joint_tnie))
-    if not np.isclose(sum(values.values()), float(joint_tnie), atol=tolerance, rtol=0.0):
+    # The additive identity holds exactly on every integration path, so the
+    # check is a floating-point tolerance scaled to the effect magnitude and
+    # deliberately independent of the integration accuracy tolerance.
+    scale = max(1.0, abs(float(joint_tnie)), *(abs(value) for value in values.values()))
+    if not abs(residual) <= tolerance * scale:
         return _contribution_failure(
             _ContributionFailure(
                 "contribution_identity_failed",
@@ -398,11 +404,134 @@ def parallel_contributions(
                 "exposure_comparison": plan.contrast.comparison,
                 "standardization_population": "retained_analysis_rows",
                 "numerical_tolerance": tolerance,
+                "integration_method": fitted.integration_method,
             },
         )
         for name in mediator_names
     }
     return ContributionResult(available=True, contributions=contributions)
+
+
+def _block_components(
+    fitted: FittedSystem,
+    partition: _OutcomeTermPartition,
+    mediator_names: Sequence[str],
+    outcome_frame: pd.DataFrame,
+) -> dict[str, np.ndarray]:
+    """Evaluate each mediator's outcome-mean block on one predictor frame."""
+
+    matrix = transform_design(fitted.outcome_node.design, outcome_frame).to_numpy(
+        dtype=float,
+        copy=False,
+    )
+    coefficients = np.asarray(fitted.outcome_node.coefficients, dtype=float)
+    components: dict[str, np.ndarray] = {}
+    for name in mediator_names:
+        component = np.zeros(len(outcome_frame), dtype=float)
+        for column_slice in partition.mediator_slices[name]:
+            component += matrix[:, column_slice] @ coefficients[column_slice]
+        components[name] = component
+    return components
+
+
+def _with_outcome_regime(plan: AnalysisPlan, frame: pd.DataFrame) -> pd.DataFrame:
+    """Set the outcome exposure to the comparison level and fix moderators."""
+
+    outcome_frame = frame.copy(deep=True)
+    outcome_frame[plan.analysis_columns[0]] = plan.contrast.comparison
+    for name, value in plan.contrast.moderator_values.items():
+        outcome_frame[name] = value
+    return outcome_frame
+
+
+def _sobol_component_means(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    partition: _OutcomeTermPartition,
+    mediator_names: Sequence[str],
+    *,
+    mediator_exposure: object,
+    draws: CommonDraws | None,
+) -> dict[str, float]:
+    """Average mediator blocks over the accepted common Sobol draws."""
+
+    sums = {name: 0.0 for name in mediator_names}
+    count = 0
+    for outcome_frame in _iter_standardized_blocks(
+        data,
+        plan,
+        fitted,
+        outcome_exposure=plan.contrast.comparison,
+        mediator_exposure=mediator_exposure,
+        moderator_values=plan.contrast.moderator_values,
+        draws=draws,
+    ):
+        components = _block_components(fitted, partition, mediator_names, outcome_frame)
+        count += len(outcome_frame)
+        for name in mediator_names:
+            sums[name] += float(components[name].sum())
+    if count <= 0:
+        raise _ContributionFailure(
+            "contribution_integration_unresolved",
+            "standardized component evaluation produced no cells",
+        )
+    return {name: sums[name] / count for name in mediator_names}
+
+
+def _linear_component_means(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    partition: _OutcomeTermPartition,
+    mediator_names: Sequence[str],
+    *,
+    mediator_exposure: object,
+    draws: CommonDraws | None,
+) -> dict[str, float]:
+    """Evaluate mediator blocks at exactly propagated mediator means."""
+
+    outcome_frame = _gaussian_linear_outcome_frame(
+        data,
+        plan,
+        fitted,
+        outcome_exposure=plan.contrast.comparison,
+        mediator_exposure=mediator_exposure,
+        moderator_values=plan.contrast.moderator_values,
+    )
+    components = _block_components(fitted, partition, mediator_names, outcome_frame)
+    return {name: float(components[name].mean()) for name in mediator_names}
+
+
+def _quadrature_component_means(
+    data: pd.DataFrame,
+    plan: AnalysisPlan,
+    fitted: FittedSystem,
+    partition: _OutcomeTermPartition,
+    mediator_names: Sequence[str],
+    *,
+    mediator_exposure: object,
+    draws: CommonDraws | None,
+) -> dict[str, float]:
+    """Weight mediator blocks by the exact Bernoulli/Hermite branch table."""
+
+    branches, weights, retained_count = _gauss_hermite_branches(
+        data,
+        plan,
+        fitted,
+        mediator_exposure=mediator_exposure,
+        moderator_values=plan.contrast.moderator_values,
+    )
+    components = _block_components(
+        fitted,
+        partition,
+        mediator_names,
+        _with_outcome_regime(plan, branches),
+    )
+    return {
+        name: float(np.dot(weights, components[name]) / retained_count)
+        for name in mediator_names
+    }
 
 
 def _regime_means_at_moderators(
