@@ -405,3 +405,27 @@ def test_plan_summary_contains_population_graph_and_warnings(valid_frame, valid_
     assert "Factorization predictors:" in summary
     assert "Warnings: small_sample" in summary
     assert "p0" not in summary
+
+
+def test_scientific_edge_without_a_matching_term_is_a_plan_warning(valid_spec, valid_frame):
+    efficacy = valid_spec.node_by_response["efficacy"]
+    without_condition = replace(
+        efficacy, terms=tuple(term for term in efficacy.terms if term.variable != "condition")
+    )
+    spec = replace(
+        valid_spec,
+        nodes=tuple(without_condition if node.response == "efficacy" else node for node in valid_spec.nodes),
+    )
+
+    plan = estimate_plan(valid_frame, spec)
+
+    edge_warnings = [issue for issue in plan.warnings if issue.code == "edge_without_term"]
+    assert len(edge_warnings) == 1
+    assert edge_warnings[0].node == "efficacy"
+    assert "condition" in edge_warnings[0].message
+
+
+def test_edges_matched_by_terms_add_no_edge_warning(valid_spec, valid_frame):
+    plan = estimate_plan(valid_frame, valid_spec)
+
+    assert not [issue for issue in plan.warnings if issue.code == "edge_without_term"]

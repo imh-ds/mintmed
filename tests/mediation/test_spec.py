@@ -742,3 +742,50 @@ def test_binary_mediator_without_family_defaults_to_bernoulli_like_the_outcome(t
     with pytest.raises(SpecValidationError) as caught:
         compile_template(_template_from(base, mediators=mediators))
     assert caught.value.code == "family_mismatch"
+
+
+def _sequential_mapping() -> dict[str, object]:
+    value = _valid_mapping()
+    value["arrangement"] = "sequential"
+    value["models"]["efficacy"]["terms"].append({"variable": "coping", "basis": "linear"})
+    return value
+
+
+def test_sequential_mediator_edges_must_follow_mediator_order(tmp_path: Path) -> None:
+    value = _sequential_mapping()
+    value["scientific_edges"].append(["efficacy", "coping"])
+
+    error = _error_for(tmp_path, value)
+
+    assert error.code == "edge_order_conflict"
+    assert error.path == "scientific_edges[4]"
+
+
+def test_sequential_edge_that_follows_mediator_order_is_accepted(tmp_path: Path) -> None:
+    value = _sequential_mapping()
+    value["scientific_edges"].append(["coping", "efficacy"])
+
+    spec = load_model_spec(_write_spec(tmp_path, value))
+
+    assert ("coping", "efficacy") in spec.scientific.edges
+
+
+def test_parallel_arrangement_forbids_mediator_to_mediator_edges(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["scientific_edges"].append(["coping", "efficacy"])
+
+    error = _error_for(tmp_path, value)
+
+    assert error.code == "parallel_mediator_edge"
+    assert error.path == "scientific_edges[4]"
+
+
+def test_participant_id_cannot_be_a_scientific_edge_endpoint(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["participant_id"] = {"name": "pid", "type": "categorical"}
+    value["scientific_edges"].append(["pid", "coping"])
+
+    error = _error_for(tmp_path, value)
+
+    assert error.code == "invalid_edge_endpoint"
+    assert error.path == "scientific_edges[4]"
