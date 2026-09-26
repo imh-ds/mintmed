@@ -622,3 +622,55 @@ def test_report_exposes_both_state_components() -> None:
     assert payload["uncertainty_state"] == "unavailable"
     assert payload["warning_state"] == "warnings"
     assert "uncertainty `unavailable`, warnings `warnings`" in render_markdown(result)
+
+
+_IDENTIFICATION_TERMS = (
+    "consistency",
+    "positivity",
+    "no interference",
+    "exposure-outcome confounding",
+    "exposure-mediator confounding",
+    "mediator-outcome confounding",
+    "exposure-induced mediator-outcome confounders",
+    "temporal ordering",
+    "cross-world independence",
+    "measurement error",
+)
+
+
+def test_model_standardized_assumptions_do_not_claim_causal_identification() -> None:
+    data, spec = _fixture(n=120)
+
+    assumptions = mintmed.analyze_mediation(data, spec).diagnostics["assumptions"]
+    text = " ".join(assumptions).lower()
+
+    assert spec.contrast.interpretation == "model_standardized"
+    assert "model-standardized contrasts, not identified causal effects" in text
+    assert "assumption-based under the declared model" not in text
+    assert "correctly specified" in text
+    assert "factorization order" in text
+
+
+def test_causal_interpretation_lists_the_full_identification_set() -> None:
+    data, spec = _fixture(n=120)
+    spec = replace(
+        spec,
+        interpretation="assumption_based_causal",
+        contrast=replace(spec.contrast, interpretation="assumption_based_causal"),
+    )
+
+    assumptions = mintmed.analyze_mediation(data, spec).diagnostics["assumptions"]
+    text = " ".join(assumptions).lower()
+
+    for term in _IDENTIFICATION_TERMS:
+        assert term in text, term
+    assert "correctly specified" in text
+    assert "factorization order" in text
+
+
+def test_assumptions_name_the_moderator_conditioning() -> None:
+    data, spec = _fixture("moderated_serial", n=120)
+
+    assumptions = mintmed.analyze_mediation(data, spec).diagnostics["assumptions"]
+
+    assert any("retained_analysis_rows_with_W=0" in item for item in assumptions)
