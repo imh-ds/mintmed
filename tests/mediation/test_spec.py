@@ -654,3 +654,91 @@ def test_interpretation_declared_once_applies_to_both(tmp_path: Path, location: 
     spec = load_model_spec(_write_spec(tmp_path, value))
 
     assert spec.interpretation == spec.contrast.interpretation == "assumption_based_causal"
+
+
+def _with_site(basis: str) -> dict[str, object]:
+    value = _valid_mapping()
+    value["baseline"].append({"name": "site", "type": "categorical", "levels": [1, 2, 3]})
+    value["models"]["coping"]["terms"].append({"variable": "site", "basis": basis})
+    return value
+
+
+@pytest.mark.parametrize("basis", ["linear", "quadratic"])
+def test_numeric_coded_categorical_predictors_require_a_categorical_basis(tmp_path: Path, basis: str) -> None:
+    error = _error_for(tmp_path, _with_site(basis))
+
+    assert error.code == "invalid_term_semantics"
+    assert error.path == "models.coping.terms[2]"
+
+
+def test_categorical_predictor_with_categorical_basis_is_accepted(tmp_path: Path) -> None:
+    spec = load_model_spec(_write_spec(tmp_path, _with_site("categorical")))
+
+    assert spec.node_by_response["coping"].terms[-1].kind is TermKind.CATEGORICAL
+
+
+def test_categorical_basis_on_a_continuous_predictor_is_rejected(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["models"]["coping"]["terms"][1]["basis"] = "categorical"
+
+    error = _error_for(tmp_path, value)
+
+    assert error.code == "invalid_term_semantics"
+    assert error.path == "models.coping.terms[1]"
+
+
+def test_continuous_covariates_cannot_declare_levels_on_either_path(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["baseline"][0]["levels"] = [0, 1]
+    error = _error_for(tmp_path, value)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(
+            _template_from(
+                base,
+                baseline=(VariableSpec("baseline_distress", Role.COVARIATE, "continuous", levels=(0, 1)),),
+            )
+        )
+
+    for raised in (error, caught.value):
+        assert raised.code == "invalid_levels"
+        assert raised.path == "baseline[0].levels"
+
+
+def test_binary_mediators_require_the_bernoulli_family_on_either_path(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["mediators"][0] = {"name": "coping", "type": "binary", "levels": [0, 1], "family": "gaussian"}
+    error = _error_for(tmp_path, value)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(
+            _template_from(
+                base,
+                mediators=(
+                    VariableSpec("coping", Role.MEDIATOR, "binary", levels=(0, 1), family=Family.GAUSSIAN),
+                    base.mediators[1],
+                ),
+            )
+        )
+
+    for raised in (error, caught.value):
+        assert raised.code == "family_type_mismatch"
+        assert raised.path == "mediators[0].type"
+
+
+def test_binary_mediator_without_family_defaults_to_bernoulli_like_the_outcome(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+    mediators = (VariableSpec("coping", Role.MEDIATOR, "binary", levels=(0, 1)), base.mediators[1])
+    bernoulli_nodes = tuple(
+        replace(node, family=Family.BERNOULLI) if node.response == "coping" else node for node in base.nodes
+    )
+
+    compiled = compile_template(_template_from(base, mediators=mediators, nodes=bernoulli_nodes))
+    assert compiled.node_by_response["coping"].family is Family.BERNOULLI
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(_template_from(base, mediators=mediators))
+    assert caught.value.code == "family_mismatch"
