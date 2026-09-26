@@ -5,7 +5,7 @@ replicates: 200
 bootstrap_replicates: 399
 bootstrap_mode: standard
 integration_draws: 256
-integration_tolerance: 1.0e-8
+integration_tolerance: 1.0e-3
 max_seconds: 600
 memory_budget_mb: 1024
 cell_ids:
