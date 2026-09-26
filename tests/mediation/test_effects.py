@@ -354,3 +354,38 @@ def test_placeholder_draws_cannot_change_exact_path_contributions():
         means.total_natural_indirect_effect,
         abs=1e-10,
     )
+
+
+def test_moderator_contrasts_reuse_identical_regime_configurations(monkeypatch):
+    # Audit BUG-03: the baseline configuration was re-evaluated for the
+    # baseline effects, for the equal-to-baseline value, and again after the
+    # primary effects. Reuse must not change any estimate.
+    fixture, plan, fitted = _moderated_fit()
+    import mintmed.effects as effects_module
+
+    baseline_values = dict(plan.contrast.moderator_values)
+    uncached = moderator_contrasts(
+        fixture.data, plan, fitted, fitted.draws, moderator_values={"W": (0.0, 1.0)}
+    )
+    reference = compute_regime_means(fixture.data, plan, fitted)
+
+    calls = 0
+    original = effects_module.standardize_regime
+
+    def counting(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(effects_module, "standardize_regime", counting)
+    cached = moderator_contrasts(
+        fixture.data,
+        plan,
+        fitted,
+        fitted.draws,
+        moderator_values={"W": (0.0, 1.0)},
+        baseline_values=baseline_values,
+        reference_means=reference,
+    )
+    assert cached == uncached
+    assert calls == 3  # only the W=1 configuration is new

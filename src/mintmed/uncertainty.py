@@ -342,6 +342,7 @@ def _run_replicate(
             baseline_values=baseline_values,
             units=units,
             numerical_tolerance=replicate_plan.computation.integration_tolerance,
+            reference_means=means,
         )
         for contrast in contrasts:
             for difference in contrast.differences:

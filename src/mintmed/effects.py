@@ -683,6 +683,12 @@ def _validate_moderator_configuration(
             )
 
 
+def _configuration_key(configuration: Mapping[str, object]) -> tuple[tuple[str, object], ...]:
+    """Return an order-independent key for one moderator configuration."""
+
+    return tuple(sorted((str(name), value) for name, value in configuration.items()))
+
+
 def moderator_contrasts(
     data: pd.DataFrame,
     plan: AnalysisPlan,
@@ -693,8 +699,15 @@ def moderator_contrasts(
     baseline_values: Mapping[str, object] | None = None,
     units: str = "outcome_units",
     numerical_tolerance: float = 1e-10,
+    reference_means: RegimeMeans | None = None,
 ) -> tuple[ModeratorContrast, ...]:
-    """Evaluate ordered moderator effects and paired effect differences."""
+    """Evaluate ordered moderator effects and paired effect differences.
+
+    ``reference_means`` may carry the primary regime means already computed
+    at ``plan.contrast.moderator_values`` with the same draws; identical
+    moderator configurations are evaluated once per call.  Reuse is exact
+    because the same deterministic draws define every configuration.
+    """
 
     tolerance = _validate_tolerance(numerical_tolerance)
     if not isinstance(moderator_values, Mapping):
@@ -717,11 +730,23 @@ def moderator_contrasts(
         ordered_values[moderator] = tuple(values)
     _validate_moderator_configuration(data, plan, fitted, baseline)
 
+    means_by_configuration: dict[tuple[tuple[str, object], ...], RegimeMeans] = {}
+    if reference_means is not None:
+        means_by_configuration[_configuration_key(plan.contrast.moderator_values)] = reference_means
+
+    def means_at(configuration: Mapping[str, object]) -> RegimeMeans:
+        key = _configuration_key(configuration)
+        if key not in means_by_configuration:
+            means_by_configuration[key] = _regime_means_at_moderators(
+                data, plan, fitted, draws, configuration
+            )
+        return means_by_configuration[key]
+
     contrasts: list[ModeratorContrast] = []
     for moderator, values in ordered_values.items():
         baseline_configuration = dict(baseline)
         baseline_effects = natural_effects(
-            _regime_means_at_moderators(data, plan, fitted, draws, baseline_configuration),
+            means_at(baseline_configuration),
             exposure_reference=plan.contrast.reference,
             exposure_comparison=plan.contrast.comparison,
             units=units,
@@ -733,7 +758,7 @@ def moderator_contrasts(
             configuration[moderator] = value
             _validate_moderator_configuration(data, plan, fitted, configuration)
             effects = natural_effects(
-                _regime_means_at_moderators(data, plan, fitted, draws, configuration),
+                means_at(configuration),
                 exposure_reference=plan.contrast.reference,
                 exposure_comparison=plan.contrast.comparison,
                 units=units,

@@ -451,6 +451,7 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
                 baseline_values=baseline_values,
                 units=units,
                 numerical_tolerance=plan.computation.integration_tolerance,
+                reference_means=means,
             )
         except GFormulaError as exc:
             moderation_reason = exc.message
