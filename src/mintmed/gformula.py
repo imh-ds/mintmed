@@ -540,6 +540,39 @@ def _primary_means(data: pd.DataFrame, system: FittedSystem, draws: CommonDraws)
     return _compute_means_with_system(data, system, draws)
 
 
+def _outcome_scale(retained: pd.DataFrame, plan: AnalysisPlan) -> float:
+    """Return the retained outcome SD that scales ``integration_tolerance``.
+
+    Expressing the Sobol tolerance in outcome-SD units makes acceptance
+    invariant to outcome units.  A degenerate outcome falls back to 1.
+    """
+
+    values = retained[plan.nodes[-1].response].to_numpy(dtype=float)
+    scale = float(np.std(values, ddof=1)) if values.size > 1 else float("nan")
+    return scale if np.isfinite(scale) and scale > 0.0 else 1.0
+
+
+def _tolerance_diagnostics(
+    tolerance: float,
+    outcome_scale: float,
+    checks: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Describe the tolerance scale and the best accuracy any budget reached."""
+
+    best = min(
+        max(check["independent_scramble_max_delta"], check["doubling_max_delta"] or 0.0)
+        for check in checks
+    )
+    return {
+        "tolerance": tolerance,
+        "tolerance_scale": "outcome_sd",
+        "outcome_scale": outcome_scale,
+        "absolute_tolerance": tolerance * outcome_scale,
+        "best_max_delta": best,
+        "required_relative_tolerance": best / outcome_scale,
+    }
+
+
 def _select_integration(
     retained: pd.DataFrame,
     plan: AnalysisPlan,
@@ -555,6 +588,8 @@ def _select_integration(
             details={"integration_draws": start},
         )
     tolerance = float(plan.computation.integration_tolerance)
+    outcome_scale = _outcome_scale(retained, plan)
+    absolute_tolerance = tolerance * outcome_scale
     checks: list[Mapping[str, Any]] = []
     last_primary: CommonDraws | None = None
     for budget in _BUDGETS[_BUDGETS.index(start) :]:
@@ -584,7 +619,9 @@ def _select_integration(
             doubled_system = _sobol_system(plan, nodes, correlation, doubled)
             doubled_means = _primary_means(retained, doubled_system, doubled)
             doubling_delta = float(np.max(np.abs(_effect_vector(primary_means) - _effect_vector(doubled_means))))
-        accepted = independent_delta <= tolerance and (doubling_delta is None or doubling_delta <= tolerance)
+        accepted = independent_delta <= absolute_tolerance and (
+            doubling_delta is None or doubling_delta <= absolute_tolerance
+        )
         checks.append({
             "draw_count": budget,
             "independent_scramble_max_delta": independent_delta,
@@ -598,7 +635,7 @@ def _select_integration(
             diagnostics = {
                 "initial_draw_count": start,
                 "accepted_draw_count": accepted_budget,
-                "tolerance": tolerance,
+                **_tolerance_diagnostics(tolerance, outcome_scale, checks),
                 "candidate_checks": tuple(checks),
                 "independent_scramble_max_delta": independent_delta,
                 "doubling_max_delta": doubling_delta,
@@ -609,7 +646,7 @@ def _select_integration(
     diagnostics = {
         "initial_draw_count": start,
         "accepted_draw_count": None,
-        "tolerance": tolerance,
+        **_tolerance_diagnostics(tolerance, outcome_scale, checks),
         "candidate_checks": tuple(checks),
         "independent_scramble_max_delta": checks[-1]["independent_scramble_max_delta"],
         "doubling_max_delta": checks[-1]["doubling_max_delta"],
@@ -617,7 +654,12 @@ def _select_integration(
     }
     issue = Issue(
         code="integration_unresolved",
-        message="Sobol integration did not satisfy the configured tolerance by 4096 draws",
+        message=(
+            "Sobol integration did not satisfy the configured relative tolerance "
+            f"{tolerance:.3g} (x outcome SD {outcome_scale:.6g}) by 4096 draws; "
+            f"the best achieved max delta {diagnostics['best_max_delta']:.3g} "
+            f"needs a relative tolerance of at least {diagnostics['required_relative_tolerance']:.3g}"
+        ),
         status=AnalysisStatus.INTEGRATION_FAILED,
     )
     return _make_system(

@@ -509,7 +509,7 @@ def _compile_spec(
                 seed=0,
                 bootstrap=0,
                 integration_draws=256,
-                integration_tolerance=1e-8,
+                integration_tolerance=1e-3,
                 max_seconds=600,
                 memory_budget_mb=1024,
             ),

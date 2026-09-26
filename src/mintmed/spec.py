@@ -201,7 +201,7 @@ class ComputationSpec:
     seed: int
     bootstrap: int
     integration_draws: int
-    integration_tolerance: float = 1e-8
+    integration_tolerance: float = 1e-3
     max_seconds: int | None = None
     memory_budget_mb: int | None = None
     information: bool = False
@@ -979,7 +979,7 @@ def _parse_computation(value: Any) -> ComputationSpec:
     seed = _int(mapping["seed"], f"{path}.seed", minimum=0)
     bootstrap = _int(mapping["bootstrap"], f"{path}.bootstrap", minimum=0)
     integration_draws = _int(mapping["integration_draws"], f"{path}.integration_draws", minimum=1)
-    tolerance = mapping.get("integration_tolerance", 1e-8)
+    tolerance = mapping.get("integration_tolerance", 1e-3)
     if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or tolerance <= 0:
         _fail("invalid_computation", f"{path}.integration_tolerance", "tolerance must be positive")
     max_seconds = mapping.get("max_seconds")

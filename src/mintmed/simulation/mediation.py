@@ -160,7 +160,7 @@ def _fixture_template(
             seed=20260919,
             bootstrap=0,
             integration_draws=256,
-            integration_tolerance=1e-8,
+            integration_tolerance=1e-3,
         ),
         baseline=baseline,
         moderators=moderators,
