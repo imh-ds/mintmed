@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from itertools import product
 from typing import Any
 
 import numpy as np
@@ -974,47 +973,33 @@ def _enumerate_binary_regime(
     mediator_exposure: object,
     moderator_values: Mapping[str, object],
 ) -> float:
-    retained = _retained_frame(data, plan)
-    total = 0.0
-    mediator_names = _mediator_order(plan)
-    for _, observed in retained.iterrows():
-        row = observed.to_frame().T
-        row = _regime_frame(row, plan, mediator_exposure, moderator_values)
-        row_total = 0.0
-        for state in product((0.0, 1.0), repeat=len(mediator_names)):
-            state_probability = 1.0
-            current = row.copy(deep=True)
-            for name, value in zip(mediator_names, state):
-                current[name] = value
-                try:
-                    probability = float(fitted.node_by_response[name].predict_mean(current)[0])
-                except NodeFitError as exc:
-                    raise _error(
-                        exc.code,
-                        AnalysisStatus.FIT_FAILED,
-                        str(exc),
-                        node=name,
-                        regime=(outcome_exposure, mediator_exposure),
-                        details=dict(exc.details),
-                    ) from exc
-                state_probability *= probability if value == 1.0 else 1.0 - probability
-            outcome_frame = _regime_frame(current, plan, outcome_exposure, moderator_values)
-            try:
-                outcome = float(fitted.outcome_node.predict_mean(outcome_frame)[0])
-            except NodeFitError as exc:
-                raise _error(
-                    exc.code,
-                    AnalysisStatus.FIT_FAILED,
-                    str(exc),
-                    node=fitted.outcome_node.response,
-                    regime=(outcome_exposure, mediator_exposure),
-                    details=dict(exc.details),
-                ) from exc
-            row_total += state_probability * outcome
-        total += row_total
-    if len(retained) == 0:
-        raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
-    return total / len(retained)
+    """Exactly enumerate all Bernoulli mediator states in one batched table.
+
+    With only Bernoulli mediators the shared branch table holds every
+    participant x mediator-state combination with its exact probability, so
+    one outcome transform replaces the former per-participant, per-state loop.
+    """
+
+    branches, weights, retained_count = _gauss_hermite_branches(
+        data,
+        plan,
+        fitted,
+        mediator_exposure=mediator_exposure,
+        moderator_values=moderator_values,
+    )
+    outcome_frame = _regime_frame(branches, plan, outcome_exposure, moderator_values)
+    try:
+        outcome = np.asarray(_predict_mean(fitted.outcome_node, outcome_frame), dtype=float).reshape(-1)
+    except NodeFitError as exc:
+        raise _error(
+            exc.code,
+            AnalysisStatus.FIT_FAILED,
+            str(exc),
+            node=fitted.outcome_node.response,
+            regime=(outcome_exposure, mediator_exposure),
+            details=dict(exc.details),
+        ) from exc
+    return float(np.dot(weights, outcome) / retained_count)
 
 
 def _repeat_frame(frame: pd.DataFrame, count: int) -> pd.DataFrame:
@@ -1357,7 +1342,8 @@ def _compute_means_with_system(data: pd.DataFrame, fitted: FittedSystem, draws: 
     moderator_values = plan.contrast.moderator_values
     reference = plan.contrast.reference
     comparison = plan.contrast.comparison
-    if fitted.integration_method == "gauss_hermite":
+    if fitted.integration_method in {"gauss_hermite", "exact_binary_mediators"}:
+        # Both paths share the exact Bernoulli/Hermite branch table.
         return RegimeMeans(
             *_gauss_hermite_means(
                 data,

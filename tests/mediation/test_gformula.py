@@ -475,3 +475,74 @@ def test_unresolved_integration_reports_best_delta_and_required_tolerance():
     assert diagnostics["best_max_delta"] == pytest.approx(best)
     assert diagnostics["required_relative_tolerance"] == pytest.approx(best / diagnostics["outcome_scale"])
     assert "relative tolerance" in fitted.issues[0].message
+
+
+def _row_wise_binary_reference(data, plan, fitted, *, outcome_exposure, mediator_exposure):
+    """Independent per-participant enumeration used to pin the vectorized path."""
+
+    from itertools import product
+
+    exposure = plan.analysis_columns[0]
+    mediators = [node.response for node in plan.nodes[:-1]]
+    retained = data.loc[list(plan.retained_row_indices), list(plan.analysis_columns)]
+    total = 0.0
+    for _, observed in retained.iterrows():
+        row = observed.to_frame().T.assign(**{exposure: mediator_exposure})
+        for state in product((0.0, 1.0), repeat=len(mediators)):
+            probability = 1.0
+            current = row.copy()
+            for name, value in zip(mediators, state):
+                current[name] = value
+                p = float(fitted.node_by_response[name].predict_mean(current)[0])
+                probability *= p if value == 1.0 else 1.0 - p
+            outcome = current.assign(**{exposure: outcome_exposure})
+            total += probability * float(fitted.outcome_node.predict_mean(outcome)[0])
+    return total / len(retained)
+
+
+def test_vectorized_binary_enumeration_matches_row_wise_reference():
+    # Audit BUG-03: the row-by-row enumeration dominated cell 11 runtime.
+    fixture, plan, fitted = _fit("binary_two_mediators", 60)
+    assert fitted.integration_method == "exact_binary_mediators"
+    from mintmed.gformula import CommonDraws, compute_regime_means, standardize_regime
+
+    means = compute_regime_means(fixture.data, plan, fitted)
+    for (a, b), observed in (
+        ((0, 0), means.mu_00),
+        ((1, 0), means.mu_10),
+        ((1, 1), means.mu_11),
+    ):
+        expected = _row_wise_binary_reference(
+            fixture.data, plan, fitted, outcome_exposure=a, mediator_exposure=b
+        )
+        assert observed == pytest.approx(expected, abs=1e-12)
+        single = standardize_regime(
+            fixture.data,
+            plan,
+            fitted,
+            outcome_exposure=a,
+            mediator_exposure=b,
+            moderator_values={},
+            draws=CommonDraws.from_seed(seed=1, draw_count=1, mediator_count=2),
+        )
+        assert single == pytest.approx(expected, abs=1e-12)
+
+
+def test_binary_enumeration_uses_one_outcome_transform_per_regime(monkeypatch):
+    fixture, plan, fitted = _fit("binary_two_mediators", 60)
+    from mintmed import models
+    from mintmed.gformula import compute_regime_means
+
+    calls = 0
+    original = models.BernoulliNode.predict_mean
+
+    def counting(self, predictors):
+        nonlocal calls
+        calls += 1
+        return original(self, predictors)
+
+    monkeypatch.setattr(models.BernoulliNode, "predict_mean", counting)
+    compute_regime_means(fixture.data, plan, fitted)
+    # Two branch tables x two mediators, plus one batched outcome transform,
+    # instead of per-participant, per-state predictions.
+    assert calls <= 5
