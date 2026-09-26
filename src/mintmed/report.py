@@ -57,6 +57,9 @@ _BOOTSTRAP_COLUMNS = (
     "contribution_available",
     "contribution_reason_code",
     "contribution_reason",
+    "moderator_available",
+    "moderator_reason_code",
+    "moderator_reason",
 )
 _PRIVATE_REPLICATE_KEYS = {
     "row_positions",

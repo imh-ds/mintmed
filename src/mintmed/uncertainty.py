@@ -342,17 +342,28 @@ def _run_replicate(
 
     moderator_values, baseline_values = _moderator_request(point)
     if moderator_values:
-        contrasts = moderator_contrasts(
-            replicate_frame,
-            replicate_plan,
-            fitted,
-            draws,
-            moderator_values=moderator_values,
-            baseline_values=baseline_values,
-            units=units,
-            numerical_tolerance=replicate_plan.computation.integration_tolerance,
-            reference_means=means,
-        )
+        # Moderator differences are optional outputs: a typed failure here
+        # withholds them for this replicate without failing the primary refit.
+        try:
+            contrasts = moderator_contrasts(
+                replicate_frame,
+                replicate_plan,
+                fitted,
+                draws,
+                moderator_values=moderator_values,
+                baseline_values=baseline_values,
+                units=units,
+                numerical_tolerance=replicate_plan.computation.integration_tolerance,
+                reference_means=means,
+            )
+        except GFormulaError as exc:
+            record["moderator_available"] = False
+            record["moderator_reason_code"] = exc.code
+            record["moderator_reason"] = exc.message
+            return record
+        record["moderator_available"] = True
+        record["moderator_reason_code"] = None
+        record["moderator_reason"] = None
         for contrast in contrasts:
             for difference in contrast.differences:
                 key = _canonical_moderator_key(contrast.moderator, contrast.value, difference.name)
@@ -467,14 +478,20 @@ def _intervals_from_records(
         status = AnalysisStatus.INTERVAL_UNAVAILABLE
         lower: float | None = None
         upper: float | None = None
-        if eligible and len(values) >= 2:
+        optional = key not in {effect.name for effect in point.effects}
+        optional_missing = optional and len(values) < successful
+        if optional_missing:
+            # An optional output unavailable in any successful replicate is
+            # withheld; percentiles over the remaining subset would be biased.
+            missing_optional = True
+            if eligible:
+                reason = "optional_output_unavailable"
+        elif eligible and len(values) >= 2:
             lower, upper = (float(bound) for bound in np.percentile(values, [2.5, 97.5], method="linear"))
             status = AnalysisStatus.WARNING if provisional else AnalysisStatus.OK
             reason = "quick_diagnostic_provisional" if provisional else None
         elif eligible and len(values) < 2:
             reason = "fewer_than_two_successful_replicates"
-        if key not in {effect.name for effect in point.effects} and len(values) < successful:
-            missing_optional = True
         intervals.append(
             EffectEstimate(
                 name=key,
