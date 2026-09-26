@@ -400,3 +400,40 @@ def test_structurally_refused_contributions_are_not_reevaluated(monkeypatch):
     for record in result.replicates:
         assert record["contribution_available"] is False
         assert record["contribution_reason_code"] == "contribution_nonparallel"
+
+
+def test_bootstrap_refits_use_statsmodels_and_record_solvers(monkeypatch):
+    # Audit BUG-04: bootstrap refits previously used a custom NumPy IRLS.
+    fixture, plan, point = _point_fixture("binary_mediator_gaussian_outcome", n=80, bootstrap=2)
+    from mintmed import models
+
+    calls = {"OLS": 0, "GLM": 0}
+    original_ols, original_glm = models.sm.OLS, models.sm.GLM
+
+    def counting_ols(*args, **kwargs):
+        calls["OLS"] += 1
+        return original_ols(*args, **kwargs)
+
+    def counting_glm(*args, **kwargs):
+        calls["GLM"] += 1
+        return original_glm(*args, **kwargs)
+
+    monkeypatch.setattr(models.sm, "OLS", counting_ols)
+    monkeypatch.setattr(models.sm, "GLM", counting_glm)
+
+    from mintmed.uncertainty import bootstrap_analysis
+
+    result = bootstrap_analysis(fixture.data, plan, point)
+    assert result.successful == 2
+    assert calls == {"OLS": 2, "GLM": 2}
+    for record in result.replicates:
+        assert record["node_solvers"] == "M=statsmodels_glm;Y=statsmodels_ols"
+
+
+def test_bootstrap_refit_matches_point_fit_on_identical_rows():
+    from mintmed.gformula import _fit_system_with_fixed_budget, fit_system
+
+    fixture, plan, point = _point_fixture("binary_mediator_gaussian_outcome", n=80, bootstrap=0)
+    refit = _fit_system_with_fixed_budget(fixture.data, plan, draw_seed=1, draw_budget=0)
+    for original, repeated in zip(fit_system(fixture.data, plan).nodes, refit.nodes, strict=True):
+        np.testing.assert_array_equal(original.coefficients, repeated.coefficients)
