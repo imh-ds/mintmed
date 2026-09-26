@@ -389,3 +389,113 @@ def test_continuous_exposure_without_contrast_is_rejected(tmp_path: Path) -> Non
 
     assert error.code == "missing_key"
     assert error.path in {"exposure.reference", "exposure.comparison"}
+
+
+def _template_from(spec: ModelSpec, **changes: object) -> TemplateSpec:
+    fields: dict[str, object] = {
+        "exposure": spec.exposure,
+        "outcome": spec.outcome,
+        "mediators": spec.mediators,
+        "nodes": spec.nodes,
+        "contrast": spec.contrast,
+        "computation": spec.computation,
+        "baseline": spec.baseline,
+        "moderators": spec.moderators,
+        "scientific_edges": spec.scientific.edges,
+        "mediator_order": spec.scientific.mediator_order,
+        "arrangement": spec.scientific.arrangement,
+        "missing": spec.missing,
+        "interpretation": spec.interpretation,
+        "schema_version": spec.schema_version,
+        "participant_id": spec.participant_id,
+    }
+    fields.update(changes)
+    return TemplateSpec(**fields)
+
+
+def _mediator(observed_type: str, family: Family, levels: tuple[object, ...] = ()) -> VariableSpec:
+    return VariableSpec("coping", Role.MEDIATOR, observed_type, levels=levels, family=family)
+
+
+def _set_path(mapping: dict, path: tuple[object, ...], value: object) -> None:
+    target = mapping
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+
+_PARITY_CASES = {
+    "ordinal_mediator": (
+        [(("mediators", 0, "type"), "ordinal")],
+        lambda spec: {"mediators": (_mediator("ordinal", Family.GAUSSIAN), spec.mediators[1])},
+        "unsupported_observed_type",
+    ),
+    "count_mediator": (
+        [(("mediators", 0, "type"), "count")],
+        lambda spec: {"mediators": (_mediator("count", Family.GAUSSIAN), spec.mediators[1])},
+        "unsupported_observed_type",
+    ),
+    "unknown_mediator_type": (
+        [(("mediators", 0, "type"), "banana")],
+        lambda spec: {"mediators": (_mediator("banana", Family.GAUSSIAN), spec.mediators[1])},
+        "unsupported_observed_type",
+    ),
+    "bernoulli_on_continuous_mediator": (
+        [(("mediators", 0, "family"), "bernoulli")],
+        lambda spec: {"mediators": (_mediator("continuous", Family.BERNOULLI), spec.mediators[1])},
+        "family_type_mismatch",
+    ),
+    "bernoulli_mediator_bad_levels": (
+        [(("mediators", 0, "family"), "bernoulli"), (("mediators", 0, "type"), "binary"), (("mediators", 0, "levels"), [1, 2])],
+        lambda spec: {"mediators": (_mediator("binary", Family.BERNOULLI, (1, 2)), spec.mediators[1])},
+        "invalid_binary_levels",
+    ),
+    "participant_id_not_categorical": (
+        [(("participant_id",), {"name": "pid", "type": "continuous"})],
+        lambda spec: {"participant_id": VariableSpec("pid", Role.PARTICIPANT_ID, "continuous")},
+        "invalid_participant_id",
+    ),
+    "unsupported_exposure_type": (
+        [(("exposure", "type"), "count")],
+        lambda spec: {"exposure": VariableSpec("condition", Role.EXPOSURE, "count", levels=(0, 1))},
+        "unsupported_exposure_type",
+    ),
+    "binary_exposure_levels_not_0_1": (
+        [(("exposure", "levels"), [1, 2]), (("exposure", "reference"), 1), (("exposure", "comparison"), 2)],
+        lambda spec: {"exposure": VariableSpec("condition", Role.EXPOSURE, "binary", levels=(1, 2))},
+        "invalid_binary_levels",
+    ),
+    "continuous_exposure_with_levels": (
+        [(("exposure", "type"), "continuous")],
+        lambda spec: {"exposure": VariableSpec("condition", Role.EXPOSURE, "continuous", levels=(0, 1))},
+        "invalid_exposure_levels",
+    ),
+    "binary_covariate_without_levels": (
+        [(("baseline", 0, "type"), "binary")],
+        lambda spec: {"baseline": (VariableSpec("baseline_distress", Role.COVARIATE, "binary"),)},
+        "missing_levels",
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_PARITY_CASES))
+def test_yaml_and_template_reject_invalid_variables_with_the_same_code(tmp_path: Path, case: str) -> None:
+    yaml_changes, template_changes, code = _PARITY_CASES[case]
+    value = _valid_mapping()
+    for path, replacement in yaml_changes:
+        _set_path(value, path, replacement)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    yaml_error = _error_for(tmp_path, value)
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(_template_from(base, **template_changes(base)))
+
+    assert yaml_error.code == code
+    assert caught.value.code == code
+    assert caught.value.path == yaml_error.path
+
+
+def test_template_round_trip_of_a_valid_yaml_spec_compiles_identically(tmp_path: Path) -> None:
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    assert compile_template(_template_from(base)) == base
