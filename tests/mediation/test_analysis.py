@@ -547,3 +547,16 @@ def test_continuous_moderator_without_evaluation_values_is_not_contrasted() -> N
     result = mintmed.analyze_mediation(data, spec)
 
     assert result.diagnostics["moderation"]["requested"] is False
+
+
+def test_invalid_draw_budget_is_reported_as_an_invalid_specification() -> None:
+    from mintmed.api import _failure_state
+    from mintmed.gformula import GFormulaError
+
+    error = GFormulaError(
+        code="invalid_draw_budget",
+        status=AnalysisStatus.INTEGRATION_FAILED,
+        message="integration_draws must be one of 256, 512, 1024, 2048, or 4096",
+    )
+
+    assert _failure_state(error, "point") == "invalid_specification"

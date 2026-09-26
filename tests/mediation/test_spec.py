@@ -567,3 +567,30 @@ def test_categorical_moderator_evaluation_values_must_be_declared_levels(tmp_pat
     value["contrast"]["moderator_values"] = {"age": 0}
 
     assert _error_for(tmp_path, value).code == "invalid_moderator_value"
+
+
+@pytest.mark.parametrize("draws", [8, 128, 1000, 8192])
+def test_unsupported_integration_draw_budgets_are_rejected_on_both_paths(tmp_path: Path, draws: int) -> None:
+    from dataclasses import replace
+
+    value = _valid_mapping()
+    value["computation"]["integration_draws"] = draws
+    error = _error_for(tmp_path, value)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(
+            _template_from(base, computation=replace(base.computation, integration_draws=draws))
+        )
+
+    for raised in (error, caught.value):
+        assert raised.code == "invalid_computation"
+        assert raised.path == "computation.integration_draws"
+
+
+@pytest.mark.parametrize("draws", [256, 512, 1024, 2048, 4096])
+def test_supported_integration_draw_budgets_are_accepted(tmp_path: Path, draws: int) -> None:
+    value = _valid_mapping()
+    value["computation"]["integration_draws"] = draws
+
+    assert load_model_spec(_write_spec(tmp_path, value)).computation.integration_draws == draws
