@@ -274,6 +274,8 @@ def _result_for_failure(
         plan,
         fitted,
         overall_status=state,
+        uncertainty_state="not_run",
+        warning_state="none",
         error=issue,
         stage=stage,
     )
@@ -287,6 +289,47 @@ def _result_for_failure(
         provenance=_build_provenance(spec, plan, fitted, None),
         status=_analysis_status(state),
     )
+
+
+def _state_components(
+    plan: AnalysisPlan,
+    bootstrap: BootstrapResult | None,
+    *,
+    optional_warnings: Sequence[Issue],
+    moderation: Mapping[str, Any],
+    contributions: ContributionResult | None,
+) -> tuple[str, str]:
+    """Return ``(uncertainty_state, warning_state)`` for a completed analysis.
+
+    ``overall_status`` folds both into one string and, by precedence, can
+    hide one of them (``point_only`` hides warnings; ``complete_with_warnings``
+    without a bootstrap hides that no uncertainty was computed). These two
+    independent components always state both conditions.
+    """
+
+    if bootstrap is None:
+        uncertainty = "not_requested"
+    elif bootstrap.status is AnalysisStatus.INCOMPLETE:
+        uncertainty = "incomplete"
+    elif bootstrap.status is AnalysisStatus.INTERVAL_UNAVAILABLE:
+        uncertainty = "unavailable"
+    elif bootstrap.metadata.get("provisional"):
+        uncertainty = "provisional"
+    else:
+        uncertainty = "complete"
+    has_warnings = bool(
+        optional_warnings
+        or plan.warnings
+        or moderation.get("status") not in {None, "ok", "not_requested"}
+        or (contributions is not None and not contributions.available)
+        or (bootstrap is not None and bootstrap.failed > 0)
+        or (
+            bootstrap is not None
+            and bootstrap.status is AnalysisStatus.WARNING
+            and not bootstrap.metadata.get("provisional")
+        )
+    )
+    return uncertainty, "warnings" if has_warnings else "none"
 
 
 def _overall_state(
@@ -515,6 +558,13 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
         moderation=moderation,
         contributions=contributions,
     )
+    uncertainty_state, warning_state = _state_components(
+        plan,
+        bootstrap,
+        optional_warnings=optional_warnings,
+        moderation=moderation,
+        contributions=contributions,
+    )
     diagnostics = assemble_diagnostics(
         plan,
         fitted,
@@ -522,6 +572,8 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
         moderation=moderation,
         optional_warnings=optional_warnings,
         overall_status=state,
+        uncertainty_state=uncertainty_state,
+        warning_state=warning_state,
     )
     return MediationResult(
         specification_hash=plan.specification_hash,

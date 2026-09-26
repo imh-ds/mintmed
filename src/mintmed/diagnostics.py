@@ -203,6 +203,8 @@ def assemble_diagnostics(
     moderation: Mapping[str, object] | None = None,
     optional_warnings: Sequence[Issue] = (),
     overall_status: str,
+    uncertainty_state: str | None = None,
+    warning_state: str | None = None,
     error: Issue | None = None,
     stage: str | None = None,
 ) -> Mapping[str, object]:
@@ -317,6 +319,10 @@ def assemble_diagnostics(
     }
     return {
         "overall_status": overall_status,
+        # overall_status is kept for compatibility; these two components state
+        # the uncertainty and warning conditions independently.
+        "uncertainty_state": uncertainty_state,
+        "warning_state": warning_state,
         "rows": rows,
         "missing": missing,
         "participant_id": participant_id,

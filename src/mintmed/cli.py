@@ -77,6 +77,15 @@ def _main_impl(argv: Sequence[str] | None = None) -> int:
 
     overall_status = str(result.diagnostics.get("overall_status", "incomplete"))
     if overall_status in _SUCCESS_STATES:
+        uncertainty_state = result.diagnostics.get("uncertainty_state")
+        if uncertainty_state == "unavailable":
+            # Point estimates are valid output, but a requested bootstrap
+            # produced no intervals; say so even though the exit code is 0.
+            print(
+                f"mintmed: analysis status {overall_status}; uncertainty unavailable "
+                "(bootstrap intervals were withheld); see analysis.json",
+                file=sys.stderr,
+            )
         return 0
     print(f"mintmed: analysis status {overall_status}; see analysis.json for diagnostics", file=sys.stderr)
     return 1

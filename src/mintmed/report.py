@@ -171,6 +171,8 @@ def result_to_dict(result: MediationResult) -> dict[str, Any]:
         "schema_version": 1,
         "status": _status_value(result.status),
         "overall_status": _json_safe(result.diagnostics.get("overall_status")),
+        "uncertainty_state": _json_safe(result.diagnostics.get("uncertainty_state")),
+        "warning_state": _json_safe(result.diagnostics.get("warning_state")),
         "specification_hash": str(result.specification_hash),
         "analysis_hash": str(result.analysis_hash),
         "effects": [_effect_payload(effect) for effect in result.effects],
@@ -402,7 +404,8 @@ def render_markdown(result: MediationResult) -> str:
         "",
         "## Contrast and answer",
         "",
-        f"- Overall status: `{_display(payload['overall_status'])}` (result status `{_display(payload['status'])}`).",
+        f"- Overall status: `{_display(payload['overall_status'])}` (uncertainty `{_display(payload.get('uncertainty_state'))}`, "
+        f"warnings `{_display(payload.get('warning_state'))}`; result status `{_display(payload['status'])}`).",
         f"- Exposure contrast: `{_display(contrast.get('reference'))}` → `{_display(contrast.get('comparison'))}`.",
         f"- Interpretation: `{_display(scientific.get('interpretation'))}`.",
         *_conditioning_lines(contrast.get("moderator_values")),

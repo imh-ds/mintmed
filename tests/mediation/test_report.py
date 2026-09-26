@@ -155,6 +155,8 @@ def test_result_to_dict_preserves_statuses_hashes_and_safe_bootstrap_records() -
         "schema_version",
         "status",
         "overall_status",
+        "uncertainty_state",
+        "warning_state",
         "specification_hash",
         "analysis_hash",
         "effects",
