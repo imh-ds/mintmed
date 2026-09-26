@@ -416,6 +416,25 @@ Each task entry should record:
 - **Verification:** Full suite `368 passed` under the supported Python 3.11.9 `.venv`.
 - **Follow-up:** Standard-mode results with too few replicates currently map to overall `point_only`, following the existing `INTERVAL_UNAVAILABLE` precedence. Whether that state should be named more explicitly belongs to BUG-22 (overall-state precedence). The examples' `bootstrap: 2` settings are addressed separately under BUG-17.
 
+#### Task 13 correction — bias gate uses absolute mean bias (audit BUG-06)
+
+- **Date:** 2026-09-25
+- **Task:** Task 13 (validation summaries and gates); correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-06).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `summarize_metrics` reports `absolute_bias = |mean(estimate − truth)|` over finite biases. This is the simulation-study definition behind the locked gates (continuous `≤ 0.05` population outcome SD; binary `≤ 0.02` probability).
+  - The previous quantity, `mean(|estimate − truth|)`, is kept as the descriptive column `mean_absolute_error`.
+  - A new `bias_mc_se` column gives the Monte Carlo SE of the mean bias, `sd(bias, ddof=1)/sqrt(n_finite)`.
+  - Each bias gate records `observed_mc_se`, the worst row's MC SE on the gate's scale. It also records `threshold_within_mc_band`, which is true when the threshold lies within 1.96 MC SE of the worst observed bias.
+  - Pass/fail still compares the observed value with the threshold only. The MC SE fields are descriptive, so the locked gates and thresholds are unchanged.
+- **Rationale:** The code computed the mean absolute error, which includes each estimate's sampling spread. At N = 100–250 the TNIE SE is about 0.05–0.10 outcome units, so the "bias" gate would be expected to fail for an unbiased estimator. That would have made the Task 13 verdict uninformative about bias. Reporting the MC SE shows whether a pass or fail at 200 replicates is decisive.
+- **Actions:** Red contracts in `c05f511`. Implementation in `140f33c` (`src/mintmed/experiments/mediation_validation_reporting.py`, including an MC SE column in the report's gate table).
+- **Evidence:** In the synthetic unbiased test, errors of ±0.1 around the truth in `cell01_linear_n100` scored 0.082 SD under the old statistic, above the 0.05 SD gate. They now score 0.0 and pass. A shifted case at 0.2 SD still fails. The MAE and MC SE values are pinned by tests.
+- **Files:** `src/mintmed/experiments/mediation_validation_reporting.py`; `tests/integration/test_mediation_validation.py`; this decision log.
+- **Verification:** Full suite `371 passed` under the supported Python 3.11.9 `.venv`.
+- **Follow-up:** No full validation run has been reported with the old statistic, so no published evidence needs retracting. Population SDs for cell 11 are a separate issue (BUG-07).
+
 ## Reusable entry template
 
 ### Task NN — Name
