@@ -444,3 +444,54 @@ def test_analysis_hash_includes_numerical_library_versions(valid_spec, valid_fra
         assert estimate_plan(valid_frame, valid_spec).analysis_hash != baseline, library
     monkeypatch.setattr(spec_module, "_software_versions", lambda: versions)
     assert estimate_plan(valid_frame, valid_spec).analysis_hash == baseline
+
+
+@pytest.mark.parametrize(
+    "fixture_name",
+    ["linear", "quadratic_b", "parallel_correlated", "moderated_serial", "binary_two_mediators", "four_mediator_mixed"],
+)
+def test_declared_parameter_counts_match_the_fitted_designs(fixture_name):
+    from mintmed.gformula import fit_system
+    from mintmed.simulation import sample_fixture
+
+    fixture = sample_fixture(fixture_name, 300, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+    fitted = fit_system(fixture.data, plan)
+    complexity = plan.diagnostics["complexity"]
+
+    for node in fitted.nodes:
+        assert complexity[node.response]["parameters"] == len(node.design.columns), node.response
+
+
+def test_binary_counts_record_the_sparse_threshold():
+    from mintmed.simulation import sample_fixture
+
+    fixture = sample_fixture("binary_two_mediators", 200, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+
+    for counts in plan.diagnostics["binary_counts"].values():
+        assert counts["threshold"] == 5
+        assert {"events", "non_events"} <= set(counts)
+
+
+def test_low_observations_per_parameter_is_a_plan_warning():
+    from mintmed.simulation import sample_fixture
+
+    fixture = sample_fixture("four_mediator_mixed", 110, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+
+    warnings = [issue for issue in plan.warnings if issue.code == "low_observations_per_parameter"]
+    assert warnings
+    for issue in warnings:
+        record = plan.diagnostics["complexity"][issue.node]
+        assert min(record["observations_per_parameter"], record["events_per_parameter"] or np.inf) < 10
+
+
+def test_adequate_sample_has_no_complexity_warning():
+    from mintmed.simulation import sample_fixture
+
+    fixture = sample_fixture("linear", 200, np.random.default_rng(20260926))
+    plan = estimate_plan(fixture.data, fixture.spec)
+
+    assert not [issue for issue in plan.warnings if issue.code == "low_observations_per_parameter"]
+    assert all(record["observations_per_parameter"] >= 10 for record in plan.diagnostics["complexity"].values())
