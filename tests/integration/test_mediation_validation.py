@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 import yaml
@@ -271,13 +273,80 @@ def test_binary_cells_preserve_both_exposure_levels_in_first_rows() -> None:
         assert fixture.metadata["quadrature_order"] == 64
 
 
-def test_binary_truths_use_probability_difference_units_and_quadrature() -> None:
-    for cell_id in ("cell11_binary_mediator_n150", "cell12_mixed_binary_serial_n250"):
-        definition = cell_definition(cell_id)
-        assert definition.outcome_kind == "binary"
-        assert definition.truth_method == "gauss_hermite_64"
+def test_binary_outcome_truths_use_probability_difference_units_and_quadrature() -> None:
+    definition = cell_definition("cell12_mixed_binary_serial_n250")
+    assert definition.outcome_kind == "binary"
+    assert definition.truth_method == "gauss_hermite_64"
+    assert definition.population_outcome_sd is None
+    assert all(-1.0 <= value <= 1.0 for value in cell_truth("cell12_mixed_binary_serial_n250"))
+
+
+def test_binary_mediator_cell_has_a_continuous_outcome_and_quadrature_truth() -> None:
+    definition = cell_definition("cell11_binary_mediator_n150")
+    assert definition.outcome_kind == "continuous"
+    assert definition.truth_method == "gauss_hermite_64"
+    assert definition.population_outcome_sd == pytest.approx(math.sqrt(1.227047328738729), rel=1e-9)
+
+
+_ALL_CELL_IDS = (
+    "cell01_linear_n100",
+    "cell02_linear_n250",
+    "cell03_no_a_to_m_n100",
+    "cell04_no_m_to_y_n100",
+    "cell05_no_mediation_n100",
+    "cell06_parallel_interaction_n150",
+    "cell07_serial_three_n200",
+    "cell08_quadratic_n100",
+    "cell09_spline_n250",
+    "cell10_moderated_n150",
+    "cell11_binary_mediator_n150",
+    "cell12_mixed_binary_serial_n250",
+)
+
+
+@pytest.mark.parametrize("cell_id", _ALL_CELL_IDS)
+def test_outcome_kind_matches_the_generated_outcome_family(cell_id: str) -> None:
+    definition = cell_definition(cell_id)
+    family = generate_cell(cell_id, 12345).spec.node_by_response["Y"].family.value
+
+    assert definition.outcome_kind == {"gaussian": "continuous", "bernoulli": "binary"}[family]
+    if definition.outcome_kind == "continuous":
+        assert definition.population_outcome_sd is not None
+    else:
         assert definition.population_outcome_sd is None
-        assert all(-1.0 <= value <= 1.0 for value in cell_truth(cell_id))
+
+
+@pytest.mark.parametrize(
+    ("cell_id", "variance"),
+    [
+        ("cell01_linear_n100", 1.503125),
+        ("cell02_linear_n250", 1.503125),
+        ("cell03_no_a_to_m_n100", 1.4625),
+        ("cell04_no_m_to_y_n100", 1.1),
+        ("cell05_no_mediation_n100", 1.1),
+        ("cell06_parallel_interaction_n150", 1.7866),
+        ("cell07_serial_three_n200", 1.994),
+        ("cell08_quadratic_n100", 1.615892),
+        ("cell09_spline_n250", 1.615892),
+        ("cell10_moderated_n150", 1.51771875),
+    ],
+)
+def test_population_outcome_sd_matches_the_closed_form_variance(cell_id: str, variance: float) -> None:
+    assert cell_definition(cell_id).population_outcome_sd == pytest.approx(math.sqrt(variance), rel=1e-12)
+
+
+@pytest.mark.parametrize("cell_id", [cell_id for cell_id in _ALL_CELL_IDS if cell_id != "cell12_mixed_binary_serial_n250"])
+def test_population_outcome_sd_matches_a_large_simulation_within_one_percent(cell_id: str) -> None:
+    from dataclasses import replace as dataclass_replace
+
+    from mintmed.experiments.mediation_validation import _GENERATORS
+
+    definition = cell_definition(cell_id)
+    large = dataclass_replace(definition, n=1_000_000)
+    fixture = _GENERATORS[definition.generator_name](np.random.default_rng(20260925), large)
+    simulated = float(fixture.data["Y"].std(ddof=1))
+
+    assert definition.population_outcome_sd == pytest.approx(simulated, rel=0.01)
 
 
 def test_standard_payload_extracts_point_effects_and_bootstrap_intervals() -> None:
