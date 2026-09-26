@@ -389,3 +389,19 @@ def test_moderator_contrasts_reuse_identical_regime_configurations(monkeypatch):
     )
     assert cached == uncached
     assert calls == 3  # only the W=1 configuration is new
+
+
+def test_primary_effects_record_their_moderator_conditioning() -> None:
+    from mintmed.effects import natural_effects
+
+    means = RegimeMeans(mu_00=1.0, mu_10=1.2, mu_11=1.5)
+
+    conditioned = natural_effects(means, moderator_values={"W": 0.0, "Z": 1.5})
+    unconditioned = natural_effects(means)
+
+    for effect in conditioned:
+        assert effect.metadata["moderator_values"] == {"W": 0.0, "Z": 1.5}
+        assert effect.metadata["standardization_population"] == "retained_analysis_rows_with_W=0,Z=1.5"
+    for effect in unconditioned:
+        assert effect.metadata["moderator_values"] == {}
+        assert effect.metadata["standardization_population"] == "retained_analysis_rows"

@@ -431,3 +431,33 @@ def test_loose_tolerance_cannot_publish_single_draw_contributions() -> None:
     tnie = next(effect.estimate for effect in result.effects if effect.name == "TNIE")
     assert result.contributions is not None and result.contributions.available is True
     assert result.contributions.contributions["TNIE_M"].estimate == pytest.approx(tnie, abs=1e-10)
+
+
+def test_primary_effects_conditional_on_moderators_are_labelled_everywhere() -> None:
+    from mintmed.report import effects_rows, render_markdown
+
+    data, spec = _fixture("moderated_serial", n=120)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    for effect in result.effects:
+        assert effect.metadata["moderator_values"] == {"W": 0.0}
+        assert effect.metadata["standardization_population"] == "retained_analysis_rows_with_W=0"
+    primary_rows = [row for row in effects_rows(result) if row["source"] == "primary"]
+    assert primary_rows
+    assert all(row["evaluated_at"] == "W=0" for row in primary_rows)
+    report = render_markdown(result)
+    assert "- Evaluated at moderator values: `W=0`" in report
+    assert "not averaged over the observed moderator distribution" in report
+
+
+def test_unmoderated_primary_effects_have_no_conditioning_label() -> None:
+    from mintmed.report import effects_rows, render_markdown
+
+    data, spec = _fixture(n=120)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert all(effect.metadata["moderator_values"] == {} for effect in result.effects)
+    assert all(row["evaluated_at"] in (None, "") for row in effects_rows(result))
+    assert "Evaluated at moderator values" not in render_markdown(result)
