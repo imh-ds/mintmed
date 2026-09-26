@@ -28,7 +28,7 @@ from .diagnostics import (
     PlanValidationError,
     UnsupportedAnalysisError,
 )
-from .types import AnalysisStatus, Issue
+from .types import AnalysisStatus, Issue, _FrozenDict
 
 
 class Role(str, Enum):
@@ -82,29 +82,6 @@ class SpecValidationError(ValueError):
             status=self.status,
             node=node,
         )
-
-
-class _FrozenDict(dict[str, Any]):
-    """Dict-compatible immutable mapping that remains ``dataclasses.asdict`` safe."""
-
-    def __init__(self, value: Mapping[str, Any] | None = None) -> None:
-        dict.__init__(self, value or {})
-
-    @staticmethod
-    def _read_only(*_args: Any, **_kwargs: Any) -> None:
-        raise TypeError("mapping is read-only")
-
-    __setitem__ = _read_only
-    __delitem__ = _read_only
-    clear = _read_only
-    pop = _read_only
-    popitem = _read_only
-    setdefault = _read_only
-    update = _read_only
-    __ior__ = _read_only
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> _FrozenDict:
-        return _FrozenDict(deepcopy(dict(self), memo))
 
 
 def _freeze_mapping(value: Mapping[str, Any] | None) -> Mapping[str, Any]:

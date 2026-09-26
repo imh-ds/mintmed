@@ -44,6 +44,15 @@ class _FrozenDict(dict[str, Any]):
     def __deepcopy__(self, memo: dict[int, Any]) -> _FrozenDict:
         return _FrozenDict(deepcopy(dict(self), memo))
 
+    def __copy__(self) -> _FrozenDict:
+        # Immutable, so a shallow copy can share the instance.
+        return self
+
+    def __reduce__(self) -> tuple[type[_FrozenDict], tuple[dict[str, Any]]]:
+        # pickle's default dict-subclass protocol refills an empty instance
+        # through __setitem__, which is blocked; rebuild from a plain dict.
+        return (type(self), (dict(self),))
+
 
 def moderator_configuration_label(values: Mapping[str, Any] | None) -> str:
     """Return a stable ``name=value`` label for fixed moderator values.

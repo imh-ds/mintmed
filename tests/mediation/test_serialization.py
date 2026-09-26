@@ -56,7 +56,7 @@ def test_every_result_and_specification_object_round_trips_through_pickle() -> N
     for value in objects:
         restored = pickle.loads(pickle.dumps(value))
         assert type(restored) is type(value)
-        assert pickle.dumps(restored) == pickle.dumps(value)
+        assert restored == value
         assert copy.copy(value) is not None
         assert copy.deepcopy(value) is not None
 

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import expit
 
+from mintmed.types import _FrozenDict
 from mintmed.spec import (
     ComputationSpec,
     ContrastSpec,
@@ -44,21 +45,6 @@ _FIXTURE_NAMES = (
     "missingness",
     "opposing_paths",
 )
-
-
-class _FrozenDict(dict[str, Any]):
-    """A dict-compatible mapping that rejects all mutation operations."""
-
-    def _immutable(self, *args: Any, **kwargs: Any) -> None:
-        raise TypeError("mapping is immutable")
-
-    __setitem__ = _immutable
-    __delitem__ = _immutable
-    clear = _immutable
-    pop = _immutable
-    popitem = _immutable
-    setdefault = _immutable
-    update = _immutable
 
 
 def _freeze_value(value: Any) -> Any:
