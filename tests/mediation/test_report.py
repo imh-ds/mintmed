@@ -264,3 +264,23 @@ def test_markdown_explains_intervals_withheld_for_too_few_replicates() -> None:
 
     assert "fewer than 200 replicates" in report
     assert "95% interval (provisional)" not in report
+
+
+def test_markdown_renders_exclusion_mapping_contents_not_keys() -> None:
+    from dataclasses import replace
+
+    result = _result()
+    diagnostics = dict(result.diagnostics)
+    diagnostics["exclusions"] = {
+        "excluded_rows": 3,
+        "reasons": {"M": 2, "Y": 1},
+        "unsupported_features": ["latent_variables", "clustered_rows"],
+    }
+
+    report = render_markdown(replace(result, diagnostics=diagnostics))
+
+    assert "- Excluded rows: 3 (missing values by column: M: 2, Y: 1)." in report
+    assert "- Unsupported features: latent variables, clustered rows." in report
+    assert "- excluded_rows\n" not in report
+    assert "- reasons\n" not in report
+    assert "- unsupported_features\n" not in report

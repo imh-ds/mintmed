@@ -461,3 +461,21 @@ def test_unmoderated_primary_effects_have_no_conditioning_label() -> None:
     assert all(effect.metadata["moderator_values"] == {} for effect in result.effects)
     assert all(row["evaluated_at"] in (None, "") for row in effects_rows(result))
     assert "Evaluated at moderator values" not in render_markdown(result)
+
+
+def test_complete_case_report_shows_the_excluded_row_count() -> None:
+    from mintmed.report import render_markdown
+
+    data, spec = _fixture(n=120)
+    data = data.copy()
+    data.loc[data.index[:2], "M"] = np.nan
+    data.loc[data.index[5], "Y"] = np.nan
+    spec = replace(spec, missing="complete_case")
+
+    result = mintmed.analyze_mediation(data, spec)
+    report = render_markdown(result)
+
+    assert result.diagnostics["exclusions"]["excluded_rows"] == 3
+    assert "- Excluded rows: 3 (missing values by column:" in report
+    assert "M: 2" in report
+    assert "Y: 1" in report
