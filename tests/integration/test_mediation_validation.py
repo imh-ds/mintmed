@@ -484,3 +484,20 @@ def test_selected_combinations_reject_conflicting_or_empty_filters() -> None:
         selected_combinations(config, replicate=0, replicate_start=0, replicate_stop=1)
     with pytest.raises(ValueError, match="nonempty"):
         selected_combinations(config, replicate_start=1, replicate_stop=1)
+
+
+def test_frozen_config_resolves_nonlinear_parallel_sobol_cell() -> None:
+    # Audit BUG-02: under the frozen tolerance cell 06 was always unresolved.
+    from dataclasses import replace
+
+    from mintmed.api import analyze_mediation
+    from mintmed.experiments.mediation_validation import _prepare_spec, generate_cell
+
+    config = replace(load_config(Path("configs/mediation_validation.yaml")), bootstrap_replicates=0)
+    cell = cell_definition("cell06_parallel_interaction_n150")
+    data_seed, analysis_seed = seed_pair(config.master_seed, cell.ordinal, 0)
+    fixture = generate_cell(cell.cell_id, data_seed)
+    result = analyze_mediation(fixture.data, _prepare_spec(fixture, config, analysis_seed))
+    assert result.diagnostics["integration"]["method"] == "sobol_blocked"
+    assert result.diagnostics["overall_status"] != "integration_unresolved"
+    assert {effect.name for effect in result.effects} == {"TE", "PNDE", "TNIE"}

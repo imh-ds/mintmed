@@ -434,3 +434,44 @@ def test_fixed_budget_fit_bypasses_adaptive_integration_selection(monkeypatch):
     assert fitted.draws is not None
     assert fitted.draws.seed == 9182
     assert fitted.draws.draw_count == 64
+
+
+# BUG-02 regression contracts: the Sobol tolerance is relative to the retained
+# outcome SD and must be attainable for nonlinear parallel models by default.
+def test_default_integration_tolerance_is_relative_to_outcome_sd():
+    from mintmed.spec import ComputationSpec
+
+    assert ComputationSpec(seed=1, bootstrap=0, integration_draws=256).integration_tolerance == 1e-3
+    fixture, plan, fitted = _fit("parallel_correlated", 150)
+    assert plan.computation.integration_tolerance == 1e-3
+    assert fitted.integration_method == "sobol_blocked"
+    assert fitted.status is AnalysisStatus.OK
+    diagnostics = fitted.integration_diagnostics
+    outcome_sd = float(fixture.data["Y"].std(ddof=1))
+    assert diagnostics["tolerance_scale"] == "outcome_sd"
+    assert diagnostics["outcome_scale"] == pytest.approx(outcome_sd)
+    assert diagnostics["absolute_tolerance"] == pytest.approx(1e-3 * outcome_sd)
+
+
+def test_integration_acceptance_is_invariant_to_outcome_units():
+    fixture, plan, fitted = _fit("parallel_correlated", 150)
+    rescaled = fixture.data.assign(Y=fixture.data["Y"] * 1000.0)
+    rescaled_plan = estimate_plan(rescaled, fixture.spec)
+    from mintmed.gformula import fit_system
+
+    rescaled_fit = fit_system(rescaled, rescaled_plan)
+    assert rescaled_fit.status is fitted.status
+    assert rescaled_fit.draw_budget == fitted.draw_budget
+
+
+def test_unresolved_integration_reports_best_delta_and_required_tolerance():
+    fixture, plan, fitted = _fit("parallel_correlated", 50, tolerance=1e-300)
+    assert fitted.status is AnalysisStatus.INTEGRATION_FAILED
+    diagnostics = fitted.integration_diagnostics
+    best = min(
+        max(check["independent_scramble_max_delta"], check["doubling_max_delta"] or 0.0)
+        for check in diagnostics["candidate_checks"]
+    )
+    assert diagnostics["best_max_delta"] == pytest.approx(best)
+    assert diagnostics["required_relative_tolerance"] == pytest.approx(best / diagnostics["outcome_scale"])
+    assert "relative tolerance" in fitted.issues[0].message
