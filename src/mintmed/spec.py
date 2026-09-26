@@ -1141,6 +1141,15 @@ def _validate_model(spec: ModelSpec) -> None:
         _fail("invalid_missing_policy", "missing", f"unsupported policy {spec.missing!r}")
     if spec.interpretation not in _INTERPRETATIONS:
         _fail("invalid_interpretation", "interpretation", f"unsupported mode {spec.interpretation!r}")
+    if spec.contrast.interpretation != spec.interpretation:
+        # Downstream code reads the contrast value; the root value is hashed.
+        # Declaring one applies it to both, so a difference is a real conflict.
+        _fail(
+            "invalid_interpretation",
+            "contrast.interpretation",
+            f"contrast interpretation {spec.contrast.interpretation!r} conflicts with root "
+            f"interpretation {spec.interpretation!r}",
+        )
     _validate_contrast(spec.contrast, spec.exposure, spec.moderators)
     _validate_computation(spec.computation)
 
