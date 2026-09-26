@@ -32,6 +32,7 @@ from .types import (
     EffectEstimate,
     RegimeMeans,
     _freeze_mapping,
+    moderator_configuration_label,
 )
 
 
@@ -71,8 +72,15 @@ def natural_effects(
     interpretation: str = "model_standardized",
     standardization_population: str = "retained_analysis_rows",
     numerical_tolerance: float = 1e-10,
+    moderator_values: Mapping[str, object] | None = None,
 ) -> tuple[EffectEstimate, EffectEstimate, EffectEstimate]:
-    """Return TE, PNDE, and TNIE using the primary mediation convention."""
+    """Return TE, PNDE, and TNIE using the primary mediation convention.
+
+    ``moderator_values`` are the moderator settings the regime means were
+    evaluated at. They are recorded in metadata and in the standardization
+    label, because such effects are conditional on those settings rather than
+    averaged over the observed moderator distribution.
+    """
 
     tolerance = _validate_tolerance(numerical_tolerance)
     te = float(means.mu_11 - means.mu_00)
@@ -93,11 +101,17 @@ def natural_effects(
         status = AnalysisStatus.OK
         reason = None
 
+    fixed_moderators = dict(moderator_values or {})
+    if fixed_moderators:
+        standardization_population = (
+            f"{standardization_population}_with_{moderator_configuration_label(fixed_moderators)}"
+        )
     metadata = {
         "exposure_reference": exposure_reference,
         "exposure_comparison": exposure_comparison,
         "interpretation": interpretation,
         "standardization_population": standardization_population,
+        "moderator_values": fixed_moderators,
         "decomposition": "TE = PNDE + TNIE",
         "identity_residual": identity_residual,
         "numerical_tolerance": tolerance,
@@ -752,6 +766,7 @@ def moderator_contrasts(
             units=units,
             interpretation=plan.contrast.interpretation,
             numerical_tolerance=tolerance,
+            moderator_values=baseline_configuration,
         )
         for value in values:
             configuration = dict(baseline)
@@ -764,6 +779,7 @@ def moderator_contrasts(
                 units=units,
                 interpretation=plan.contrast.interpretation,
                 numerical_tolerance=tolerance,
+                moderator_values=configuration,
             )
             baseline_effects_by_name = {effect.name: effect for effect in baseline_effects}
             differences = tuple(

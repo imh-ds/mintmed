@@ -45,6 +45,21 @@ class _FrozenDict(dict[str, Any]):
         return _FrozenDict(deepcopy(dict(self), memo))
 
 
+def moderator_configuration_label(values: Mapping[str, Any] | None) -> str:
+    """Return a stable ``name=value`` label for fixed moderator values.
+
+    Integral floats print without a decimal part, so ``{"W": 0.0}`` is ``W=0``.
+    """
+
+    parts = []
+    for name in sorted(values or {}, key=str):
+        value = (values or {})[name]
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        parts.append(f"{name}={value}")
+    return ",".join(parts)
+
+
 def _freeze_value(value: Any) -> Any:
     """Recursively freeze result-owned mappings and sequences."""
 

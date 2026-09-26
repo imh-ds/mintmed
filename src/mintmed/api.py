@@ -395,6 +395,7 @@ def analyze_mediation(data: pd.DataFrame, spec: ModelSpec) -> MediationResult:
             interpretation=plan.contrast.interpretation,
             standardization_population="retained_analysis_rows",
             numerical_tolerance=plan.computation.integration_tolerance,
+            moderator_values=plan.contrast.moderator_values,
         )
         if any(effect.status is not AnalysisStatus.OK for effect in effects):
             reason = next(

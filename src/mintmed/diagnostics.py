@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .types import AnalysisStatus, Issue
+from .types import AnalysisStatus, Issue, moderator_configuration_label
 
 if TYPE_CHECKING:
     from .gformula import FittedSystem
@@ -255,7 +255,11 @@ def assemble_diagnostics(
             "units": "probability_difference" if outcome_family == "bernoulli" else "outcome_units",
             "interpretation": plan.contrast.interpretation,
             "arrangement": plan_diagnostics.get("arrangement"),
-            "standardization_population": "retained_analysis_rows",
+            "standardization_population": (
+                f"retained_analysis_rows_with_{moderator_configuration_label(plan.contrast.moderator_values)}"
+                if plan.contrast.moderator_values
+                else "retained_analysis_rows"
+            ),
             "outcome_family": outcome_family,
             "scientific_edges": _json_safe(plan_diagnostics.get("scientific_edges", ())),
             "factorization_order": _json_safe(plan_diagnostics.get("factorization_order", ())),

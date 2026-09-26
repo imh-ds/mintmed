@@ -15,7 +15,14 @@ from typing import Any
 
 import numpy as np
 
-from .types import AnalysisStatus, BootstrapResult, ContributionResult, EffectEstimate, MediationResult
+from .types import (
+    AnalysisStatus,
+    BootstrapResult,
+    ContributionResult,
+    EffectEstimate,
+    MediationResult,
+    moderator_configuration_label,
+)
 
 
 _EFFECT_COLUMNS = (
@@ -31,6 +38,7 @@ _EFFECT_COLUMNS = (
     "moderator",
     "moderator_value",
     "baseline_value",
+    "evaluated_at",
     "metadata",
 )
 _BOOTSTRAP_COLUMNS = (
@@ -212,6 +220,7 @@ def _effect_row(
     baseline_value: object | None = None,
 ) -> dict[str, Any]:
     point = _effect_payload(effect)
+    fixed = (point.get("metadata") or {}).get("moderator_values")
     selected = dict(interval or point)
     lower = selected.get("lower")
     upper = selected.get("upper")
@@ -232,6 +241,7 @@ def _effect_row(
         "moderator": moderator,
         "moderator_value": moderator_value,
         "baseline_value": baseline_value,
+        "evaluated_at": moderator_configuration_label(fixed) if isinstance(fixed, Mapping) and fixed else None,
         "metadata": _compact_metadata(point.get("metadata")),
     }
 
@@ -329,6 +339,18 @@ def _markdown_table(headers: Sequence[str], rows: Sequence[Sequence[Any]]) -> li
     return output
 
 
+def _conditioning_lines(moderator_values: Any) -> list[str]:
+    """State when the primary effects are evaluated at fixed moderator values."""
+
+    if not isinstance(moderator_values, Mapping) or not moderator_values:
+        return []
+    return [
+        f"- Evaluated at moderator values: `{moderator_configuration_label(moderator_values)}`. "
+        "The primary effects are standardized over the retained rows with these moderators fixed, "
+        "not averaged over the observed moderator distribution.",
+    ]
+
+
 def _bootstrap_provisional(bootstrap: Mapping[str, Any] | None) -> bool:
     """Return whether exported bootstrap intervals are quick-diagnostic provisional."""
 
@@ -355,6 +377,7 @@ def render_markdown(result: MediationResult) -> str:
         f"- Overall status: `{_display(payload['overall_status'])}` (result status `{_display(payload['status'])}`).",
         f"- Exposure contrast: `{_display(contrast.get('reference'))}` → `{_display(contrast.get('comparison'))}`.",
         f"- Interpretation: `{_display(scientific.get('interpretation'))}`.",
+        *_conditioning_lines(contrast.get("moderator_values")),
         "",
         f"| Estimand | Estimate | {interval_label} | Units | Status | Reason |",
         "| --- | ---: | --- | --- | --- | --- |",
