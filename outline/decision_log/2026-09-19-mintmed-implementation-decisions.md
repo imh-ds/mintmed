@@ -654,6 +654,101 @@ Each task entry should record:
 - **Files:** `examples/*/analysis.yaml`; `examples/*/data.csv`; `configs/mediation_validation_smoke.yaml`; `.github/workflows/verification.yml`; `scripts/generate_example_data.py`; `scripts/check_example_outputs.py`; `tests/integration/test_examples.py`; `tests/integration/test_cli.py`; this decision log.
 - **Verification:** Full suite `468 passed` at `5a99e36`. The example tests add about 36 s to the suite.
 
+#### Task 03 correction — primary effects limited to the computed triple (audit BUG-18)
+
+- **Date:** 2026-09-26
+- **Task:** Task 3 (specification); correction from the Tasks 1–14 audit (BUG-18).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `_PRIMARY_EFFECTS` is now `("TE", "PNDE", "TNIE")`. Previously it also listed `TNDE` and `PDE`, and `TNIE` twice.
+  - `contrast.primary_effects` must be exactly that triple, in any order with no duplicates. Anything else is rejected with `unsupported_primary_effects` at `contrast.primary_effects` on both the YAML and template paths.
+  - The requested-subset option was not adopted: the API, bootstrap, reports and validation all rely on the full `TE = PNDE + TNIE` decomposition, and `mu_01` is never computed.
+- **Rationale:** `[TNDE, PDE]` compiled but was never produced, `[TE]` still returned all three effects, and the hash changed with a setting that had no effect.
+- **Actions:** Red contracts in `044a8ff`, shared with BUG-19. Implementation in `1012b82`.
+- **Evidence:** Six invalid lists are rejected identically on both paths, and the triple is accepted in any order. The default spec and its hash are unchanged.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; this decision log.
+
+#### Task 03 correction — one interpretation (audit BUG-19)
+
+- **Date:** 2026-09-26
+- **Task:** Task 3 (specification); correction from the Tasks 1–14 audit (BUG-19).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `_validate_model`, run on both paths, raises `invalid_interpretation` at `contrast.interpretation` when the root and contrast interpretations differ.
+  - Declaring either one still applies it to both.
+  - Both fields are kept in the schema, for compatibility.
+- **Rationale:** Downstream code reads `plan.contrast.interpretation`, while the root value only entered the hash. Conflicting declarations were accepted silently.
+- **Actions:** Red contracts in `044a8ff`. Implementation in `a2509a8`.
+- **Evidence:** A conflict is rejected on both paths, and a single root or contrast declaration applies to both fields.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; this decision log.
+
+#### Tasks 03/05 correction — consistent type, basis and family combinations (audit BUG-20)
+
+- **Date:** 2026-09-26
+- **Task:** Task 3 (specification) and Task 5 (designs); correction from the Tasks 1–14 audit (BUG-20).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `_validate_term` requires a `categorical` basis for `categorical`-typed predictors. The methodology says "a numeric code is not evidence that a construct is continuous".
+  - `_validate_term` forbids a `categorical` basis on `continuous` predictors. Both rules use `invalid_term_semantics`.
+  - `_validate_variable` rejects `levels` on continuous non-exposure variables (`invalid_levels`). The exposure keeps `invalid_exposure_levels`.
+  - `_validate_variable` rejects a Gaussian family on a `binary`-typed mediator or outcome (`family_type_mismatch`).
+  - A binary response without a declared family now defaults to Bernoulli for mediators as well as outcomes.
+  - Binary 0/1 predictors may still use a `linear` basis, which is equivalent to treatment coding.
+- **Rationale:** These combinations fitted models that contradicted the declared measurement level, or simulated binary mediators outside {0, 1}.
+- **Actions:** Red contracts in `429029e`. Implementation in `d9c1389`.
+- **Evidence:**
+  - A numeric-coded categorical site with a linear or quadratic basis is rejected; with a categorical basis it is accepted.
+  - A categorical basis on a continuous covariate is rejected.
+  - Continuous covariate levels and Gaussian binary mediators are rejected identically on both paths.
+  - A binary template mediator without a family defaults to Bernoulli.
+  - All fixtures, validation cells and examples still compile.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; this decision log.
+
+#### Tasks 03/04 correction — scientific edges consistent with order, arrangement and terms (audit BUG-21)
+
+- **Date:** 2026-09-26
+- **Task:** Task 3 (specification) and Task 4 (plan); correction from the Tasks 1–14 audit (BUG-21).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:** The new `_validate_edge_consistency`, run on both paths, rejects:
+  - a mediator → mediator edge that contradicts `mediator_order` (`edge_order_conflict`);
+  - any mediator → mediator edge in a `parallel` arrangement (`parallel_mediator_edge`);
+  - the participant ID as an edge endpoint (`invalid_edge_endpoint`).
+  In addition, `estimate_plan` adds an `edge_without_term` warning, with node and edge path, for each edge whose source is not a term on the target node.
+  Factorization-only mediator terms in parallel arrangements remain allowed. The reverse check, a term without an edge, was not added, because covariate and factorization terms legitimately have no scientific edge.
+- **Rationale:** The declared science and the fitted factorization could contradict each other without any error or warning.
+- **Actions:** Red contracts in `8c2ef45`. Implementation in `28adf9c`.
+- **Evidence:** Each rejection is tested, as is the ordered sequential edge being accepted. The plan warning fires only for the missing term. A scan confirms that no fixture, validation cell or example triggers the new warning, so their statuses are unchanged.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; `tests/mediation/test_plan.py`; this decision log.
+
+#### Task 11 correction — uncertainty and warning states reported separately (audit BUG-22)
+
+- **Date:** 2026-09-26
+- **Task:** Task 11 (API and diagnostics); correction from the Tasks 1–14 audit (BUG-22).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `api._state_components` derives `uncertainty_state` as `not_requested | complete | provisional | unavailable | incomplete`. Failed analyses report `not_run`.
+  - It derives `warning_state` as `none | warnings`. Plan warnings, optional-output warnings, moderation problems, contribution refusals, failed replicates and non-provisional bootstrap warnings all count as warnings.
+  - Both are recorded in diagnostics and as top-level `analysis.json` fields, and shown in the report's status line.
+  - `overall_status` and its precedence are unchanged, for compatibility with the validation runner and existing consumers. This follows the audit's "keep it only for backward compatibility" option.
+  - The CLI exit codes are unchanged: 0 for `complete`, `complete_with_warnings` and `point_only`. The CLI now writes a stderr note when requested intervals were unavailable.
+- **Rationale:** `point_only` hid warnings; `examples/parallel` had a refused contribution and a failed replicate. `complete_with_warnings` without a bootstrap hid that no uncertainty was computed.
+- **Actions:** Red contracts in `ea22d1a`. Implementation in `1e0a28a`. The payload key-set test was updated.
+- **Evidence:** Tests cover:
+  - `point_only` + `unavailable` + `warnings`;
+  - `complete_with_warnings` + `not_requested`;
+  - a clean point-only run with `none`;
+  - quick-diagnostic `provisional`;
+  - an invalid-data run with `not_run`;
+  - the payload and Markdown fields;
+  - the CLI stderr note.
+- **Files:** `src/mintmed/api.py`; `src/mintmed/diagnostics.py`; `src/mintmed/report.py`; `src/mintmed/cli.py`; `tests/mediation/test_analysis.py`; `tests/mediation/test_report.py`; `tests/integration/test_cli.py`; this decision log.
+- **Verification:** Full suite `498 passed` at `1e0a28a`.
+
 ## Reusable entry template
 
 ### Task NN — Name
