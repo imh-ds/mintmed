@@ -594,3 +594,63 @@ def test_supported_integration_draw_budgets_are_accepted(tmp_path: Path, draws: 
     value["computation"]["integration_draws"] = draws
 
     assert load_model_spec(_write_spec(tmp_path, value)).computation.integration_draws == draws
+
+
+@pytest.mark.parametrize(
+    "effects",
+    [["TNDE"], ["PDE"], ["TE"], ["TE", "PNDE"], ["TE", "PNDE", "TNIE", "TNIE"], ["TE", "PNDE", "TNIE", "PDE"]],
+)
+def test_primary_effects_must_be_the_computed_triple(tmp_path: Path, effects: list[str]) -> None:
+    from dataclasses import replace
+
+    value = _valid_mapping()
+    value["contrast"] = {"primary_effects": effects}
+    error = _error_for(tmp_path, value)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(
+            _template_from(base, contrast=replace(base.contrast, primary_effects=tuple(effects)))
+        )
+
+    for raised in (error, caught.value):
+        assert raised.code == "unsupported_primary_effects"
+        assert raised.path == "contrast.primary_effects"
+
+
+def test_primary_effects_triple_is_accepted_in_any_order(tmp_path: Path) -> None:
+    value = _valid_mapping()
+    value["contrast"] = {"primary_effects": ["TNIE", "TE", "PNDE"]}
+
+    assert set(load_model_spec(_write_spec(tmp_path, value)).contrast.primary_effects) == {"TE", "PNDE", "TNIE"}
+
+
+def test_conflicting_root_and_contrast_interpretations_are_rejected(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    value = _valid_mapping()
+    value["interpretation"] = "assumption_based_causal"
+    value["contrast"] = {"interpretation": "model_standardized"}
+    error = _error_for(tmp_path, value)
+    base = load_model_spec(_write_spec(tmp_path, _valid_mapping()))
+
+    with pytest.raises(SpecValidationError) as caught:
+        compile_template(_template_from(base, interpretation="assumption_based_causal"))
+
+    for raised in (error, caught.value):
+        assert raised.code == "invalid_interpretation"
+        assert raised.path == "contrast.interpretation"
+
+
+@pytest.mark.parametrize("location", ["root", "contrast"])
+def test_interpretation_declared_once_applies_to_both(tmp_path: Path, location: str) -> None:
+    value = _valid_mapping()
+    if location == "root":
+        value["interpretation"] = "assumption_based_causal"
+    else:
+        value.pop("interpretation")
+        value["contrast"] = {"interpretation": "assumption_based_causal"}
+
+    spec = load_model_spec(_write_spec(tmp_path, value))
+
+    assert spec.interpretation == spec.contrast.interpretation == "assumption_based_causal"
