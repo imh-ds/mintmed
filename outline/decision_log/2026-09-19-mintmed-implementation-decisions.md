@@ -464,6 +464,61 @@ Each task entry should record:
 - **Verification:** Full suite `405 passed` under the supported Python 3.11.9 `.venv`.
 - **Follow-up:** No validation evidence had been published with the old metadata. The config YAML and its hash are unchanged, because the registry is code, not configuration. Runtime is unaffected.
 
+#### Tasks 03/04 correction — one variable-validation path for YAML and templates (audit BUG-08)
+
+- **Date:** 2026-09-25
+- **Task:** Task 3 (specification) and Task 4 (compiled plan); correction from the Tasks 1–14 audit (`outline/bugs/2026-09-25-tasks-01-14-audit.md`, BUG-08).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - Every variable-level rule now lives in `spec._validate_variable(variable, path)`. The rules cover: supported observed types; rejection of ordinal and count endogenous responses; Bernoulli family requiring a `binary` type and levels `(0, 1)`; exposure type and levels; explicit levels for binary and categorical variables; and a categorical participant ID.
+  - The YAML parsers keep only syntactic parsing and call the helper.
+  - `_validate_model`, which `compile_template` and `estimate_plan` both run, calls the helper for every declared variable, using the same paths as the YAML loader (`exposure`, `outcome`, `mediators[i]`, `baseline[i]`, `moderators[i]`, `participant_id`).
+  - `_validate_model` also checks that each mediator, baseline, moderator and participant-ID entry carries its role.
+  - A Bernoulli response may still omit levels on the template path. The YAML parser continues to fill `(0, 1)`.
+- **Rationale:** Task 3 requires valid YAML and templates to produce the same `ModelSpec` shape, and invalid specifications to fail deterministically. Previously `compile_template` accepted ordinal, count and unknown mediator types, Bernoulli families on continuous responses, bad exposure types and levels, and non-categorical participant IDs. The Task 7 fixtures and Task 13 cells depend on that path.
+- **Actions:** Red contracts in `fed4a24`. Implementation in `5632ee0`.
+- **Evidence:** Ten parametrized invalid declarations are fed through both entry points, and each asserts the same error code and path. A valid YAML specification also round-trips through `compile_template` to an equal `ModelSpec`. Every existing fixture and validation cell still compiles.
+- **Files:** `src/mintmed/spec.py`; `tests/mediation/test_spec.py`; this decision log.
+- **Verification:** Full suite `416 passed` at `5632ee0`.
+- **Follow-up:** A Gaussian family on a `binary` mediator is still accepted on both paths. That is tracked as BUG-20.
+
+#### Tasks 09/11/12 correction — label primary effects evaluated at fixed moderator values (audit BUG-09)
+
+- **Date:** 2026-09-25
+- **Task:** Task 9 (effects), Task 11 (diagnostics) and Task 12 (reports); correction from the Tasks 1–14 audit (BUG-09).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - The estimand stays as computed. When `contrast.moderator_values` is declared, the primary effects are standardized over the retained rows with those moderators fixed. The methodology's "same reference population for the remaining covariates" supports this conditional estimand, so no marginal (observed-moderator) primary effect is added in this baseline. Only the labelling changes.
+  - `natural_effects(..., moderator_values=...)` records `moderator_values` in effect metadata and names the population precisely, for example `retained_analysis_rows_with_W=0`. Labels come from `types.moderator_configuration_label`, which is sorted and prints integral floats as integers.
+  - Moderator-contrast effects record their own configuration.
+  - The diagnostics `scientific.standardization_population` uses the same label.
+  - `effects.csv` gains an `evaluated_at` column.
+  - The Markdown answer section adds "Evaluated at moderator values: `W=0`" and states that the effects are not averaged over the observed moderator distribution.
+- **Rationale:** In `examples/serial_moderated`, the primary `TE = 0.8357` equalled the `W = 0` effect, while the `W = 1` effect was `1.1357`. Nothing in the outputs said so, and readers would take `TE` as a population average.
+- **Actions:** Red contracts in `e045225`. Implementation in `bf1c7b5`.
+- **Evidence:** The unit test covers metadata and label with and without moderators. An API test on the moderated fixture checks the metadata, the CSV `evaluated_at` value and the Markdown line. An unmoderated run shows no conditioning label. A CLI re-run of `examples/serial_moderated` prints the line and fills `evaluated_at = W=0` on primary rows.
+- **Files:** `src/mintmed/types.py`; `src/mintmed/effects.py`; `src/mintmed/api.py`; `src/mintmed/diagnostics.py`; `src/mintmed/report.py`; `tests/mediation/test_effects.py`; `tests/mediation/test_analysis.py`; this decision log.
+- **Verification:** Full suite `419 passed` at `bf1c7b5`.
+- **Follow-up:** The fixed assumptions list still says "effects are model-standardized over retained_analysis_rows" without the moderator qualifier. The assumptions list is tracked as BUG-23. Offering a marginal primary effect would be a scope change needing a plan amendment.
+
+#### Task 12 correction — render the exclusions record in the Markdown report (audit BUG-10)
+
+- **Date:** 2026-09-25
+- **Task:** Task 12 (reports); correction from the Tasks 1–14 audit (BUG-10).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:** `report._exclusion_items` renders `diagnostics["exclusions"]` as sentences, for example:
+  - "Excluded rows: 3 (missing values by column: M: 2, Y: 1)."
+  - "Unsupported features: latent variables, clustered rows, …"
+  Any further keys are rendered as "Key: value." A plain sequence is still printed item by item.
+- **Rationale:** The renderer iterated the mapping as if it were a list, so every report printed the bullets `excluded_rows`, `reasons` and `unsupported_features` with no values. That broke Task 12's requirement to render exclusions in full.
+- **Actions:** Red contracts in `b8e60b0`. Implementation in `23a68b5`.
+- **Evidence:** A report unit test renders a mapping and asserts the sentences appear and the bare keys do not. An API test runs a `complete_case` analysis with three incomplete rows and asserts the count and per-column reasons appear in the Markdown.
+- **Files:** `src/mintmed/report.py`; `tests/mediation/test_report.py`; `tests/mediation/test_analysis.py`; this decision log.
+- **Verification:** Full suite `421 passed` at `23a68b5`.
+
 ## Reusable entry template
 
 ### Task NN — Name
