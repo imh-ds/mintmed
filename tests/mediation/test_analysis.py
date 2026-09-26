@@ -215,8 +215,9 @@ def test_parallel_attribution_unavailability_does_not_remove_primary_effects() -
     assert result.diagnostics["overall_status"] == "complete_with_warnings"
 
 
-def test_bootstrap_intervals_are_attached_to_the_public_result() -> None:
+def test_quick_diagnostic_intervals_are_attached_as_provisional() -> None:
     data, spec = _fixture(n=120, bootstrap=2)
+    spec = replace(spec, computation=replace(spec.computation, bootstrap_mode="quick_diagnostic"))
 
     result = mintmed.analyze_mediation(data, spec)
 
@@ -225,9 +226,26 @@ def test_bootstrap_intervals_are_attached_to_the_public_result() -> None:
     assert result.bootstrap.attempted == 2
     assert result.bootstrap.successful == 2
     assert result.bootstrap.failed == 0
-    assert result.bootstrap.status is AnalysisStatus.OK
-    assert all(interval.interval_available for interval in result.bootstrap.intervals[:3])
-    assert result.diagnostics["overall_status"] == "complete"
+    assert result.bootstrap.status is AnalysisStatus.WARNING
+    assert result.bootstrap.metadata["provisional"] is True
+    primary = result.bootstrap.intervals[:3]
+    assert all(interval.interval_available for interval in primary)
+    assert all(interval.reason == "quick_diagnostic_provisional" for interval in primary)
+    assert result.diagnostics["overall_status"] == "complete_with_warnings"
+
+
+def test_standard_mode_small_bootstrap_reports_no_interval() -> None:
+    data, spec = _fixture(n=120, bootstrap=2)
+
+    result = mintmed.analyze_mediation(data, spec)
+
+    assert result.bootstrap is not None
+    assert result.bootstrap.successful == 2
+    assert result.bootstrap.status is AnalysisStatus.INTERVAL_UNAVAILABLE
+    assert result.bootstrap.metadata["reason"] == "bootstrap_too_few_replicates"
+    assert all(interval.interval_available is False for interval in result.bootstrap.intervals)
+    assert all(effect.estimate is not None for effect in result.effects)
+    assert result.diagnostics["overall_status"] == "point_only"
 
 
 def test_four_mediator_analysis_records_factorization_and_budget() -> None:

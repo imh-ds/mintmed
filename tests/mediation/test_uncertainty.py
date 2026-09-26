@@ -61,7 +61,8 @@ def test_bootstrap_refits_exact_system_and_repeats_scientific_records():
     first = bootstrap_analysis(fixture.data, plan, point)
     second = bootstrap_analysis(fixture.data, plan, point)
 
-    assert first.status is AnalysisStatus.OK
+    assert first.status is AnalysisStatus.WARNING
+    assert first.metadata["provisional"] is True
     assert first.requested == 4
     assert first.attempted == 4
     assert first.successful == 4
@@ -351,6 +352,95 @@ def test_interval_eligibility_uses_declared_success_and_failure_rules(
     from mintmed.uncertainty import _interval_eligibility
 
     assert _interval_eligibility(requested, successful, failed) is eligible
+
+
+def test_quick_diagnostic_is_provisional_even_when_every_replicate_succeeds():
+    from mintmed.uncertainty import _intervals_from_records
+
+    _fixture, _plan, point = _point_fixture(bootstrap=3)
+    records = (_effect_record(1.0), _effect_record(2.0), _effect_record(3.0))
+
+    intervals, status, metadata = _intervals_from_records(
+        records,
+        3,
+        point,
+        complete=True,
+        quick_diagnostic=True,
+    )
+
+    assert status is AnalysisStatus.WARNING
+    assert metadata["provisional"] is True
+    assert metadata["reason"] == "quick_diagnostic_provisional"
+    assert all(interval.interval_available for interval in intervals)
+    assert all(interval.status is AnalysisStatus.WARNING for interval in intervals)
+    assert all(interval.reason == "quick_diagnostic_provisional" for interval in intervals)
+    assert all(interval.metadata["bootstrap_provisional"] is True for interval in intervals)
+
+
+def test_quick_diagnostic_is_provisional_at_release_sized_counts():
+    from mintmed.uncertainty import _intervals_from_records
+
+    _fixture, _plan, point = _point_fixture(bootstrap=400)
+    records = tuple(_effect_record(float(index)) for index in range(400))
+
+    intervals, status, metadata = _intervals_from_records(
+        records,
+        400,
+        point,
+        complete=True,
+        quick_diagnostic=True,
+    )
+
+    assert status is AnalysisStatus.WARNING
+    assert metadata["provisional"] is True
+    assert all(interval.reason == "quick_diagnostic_provisional" for interval in intervals)
+
+
+@pytest.mark.parametrize("requested", (2, 5, 10, 199))
+def test_standard_mode_withholds_intervals_below_the_minimum_replicate_count(requested):
+    from mintmed.uncertainty import MIN_STANDARD_BOOTSTRAP, _intervals_from_records
+
+    assert requested < MIN_STANDARD_BOOTSTRAP
+    _fixture, _plan, point = _point_fixture(bootstrap=requested)
+    records = tuple(_effect_record(float(index)) for index in range(requested))
+
+    intervals, status, metadata = _intervals_from_records(
+        records,
+        requested,
+        point,
+        complete=True,
+        quick_diagnostic=False,
+    )
+
+    assert status is AnalysisStatus.INTERVAL_UNAVAILABLE
+    assert metadata["eligible"] is False
+    assert metadata["provisional"] is False
+    assert metadata["reason"] == "bootstrap_too_few_replicates"
+    assert metadata["minimum_standard_replicates"] == MIN_STANDARD_BOOTSTRAP
+    assert all(interval.interval_available is False for interval in intervals)
+    assert all(interval.status is AnalysisStatus.INTERVAL_UNAVAILABLE for interval in intervals)
+    assert all(interval.reason == "bootstrap_too_few_replicates" for interval in intervals)
+
+
+def test_standard_mode_gives_ok_intervals_at_the_minimum_replicate_count():
+    from mintmed.uncertainty import MIN_STANDARD_BOOTSTRAP, _intervals_from_records
+
+    _fixture, _plan, point = _point_fixture(bootstrap=MIN_STANDARD_BOOTSTRAP)
+    records = tuple(_effect_record(float(index)) for index in range(MIN_STANDARD_BOOTSTRAP))
+
+    intervals, status, metadata = _intervals_from_records(
+        records,
+        MIN_STANDARD_BOOTSTRAP,
+        point,
+        complete=True,
+        quick_diagnostic=False,
+    )
+
+    assert status is AnalysisStatus.OK
+    assert metadata["provisional"] is False
+    assert metadata["reason"] is None
+    assert all(interval.status is AnalysisStatus.OK for interval in intervals)
+    assert all(interval.interval_available for interval in intervals)
 
 
 def test_exact_path_bootstrap_contributions_match_replicate_tnie():

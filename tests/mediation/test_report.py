@@ -228,3 +228,39 @@ def test_write_reports_creates_four_utf8_artifacts_with_header_only_no_bootstrap
         rows = list(csv.reader(handle))
     assert len(rows) == 1
     assert rows[0][0] == "replicate"
+
+
+def _with_bootstrap_metadata(metadata: dict, status: AnalysisStatus) -> MediationResult:
+    from dataclasses import replace
+
+    result = _result()
+    assert result.bootstrap is not None
+    return replace(result, bootstrap=replace(result.bootstrap, status=status, metadata=metadata))
+
+
+def test_markdown_labels_quick_diagnostic_intervals_as_provisional() -> None:
+    result = _with_bootstrap_metadata(
+        {"provisional": True, "reason": "quick_diagnostic_provisional"},
+        AnalysisStatus.WARNING,
+    )
+
+    report = render_markdown(result)
+
+    assert "| Estimand | Estimate | 95% interval (provisional) |" in report
+    assert "provisional quick-diagnostic intervals" in report
+
+
+def test_markdown_explains_intervals_withheld_for_too_few_replicates() -> None:
+    result = _with_bootstrap_metadata(
+        {
+            "provisional": False,
+            "reason": "bootstrap_too_few_replicates",
+            "minimum_standard_replicates": 200,
+        },
+        AnalysisStatus.INTERVAL_UNAVAILABLE,
+    )
+
+    report = render_markdown(result)
+
+    assert "fewer than 200 replicates" in report
+    assert "95% interval (provisional)" not in report
