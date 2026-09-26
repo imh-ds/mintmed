@@ -195,6 +195,58 @@ def _bootstrap_record(bootstrap: BootstrapResult | None) -> dict[str, Any]:
     }
 
 
+_IDENTIFICATION_ASSUMPTIONS = (
+    "consistency: the observed outcome and mediators equal their potential values under the received exposure",
+    "positivity: every exposure level and mediator value is possible for every covariate pattern",
+    "no interference: one participant's exposure does not affect another participant's mediators or outcome",
+    "no unmeasured exposure-outcome confounding given the declared covariates",
+    "no unmeasured exposure-mediator confounding given the declared covariates",
+    "no unmeasured mediator-outcome confounding given the exposure and declared covariates",
+    "no exposure-induced mediator-outcome confounders",
+    "temporal ordering: exposure precedes the mediators, which precede the outcome",
+    "cross-world independence of the mediator and outcome potential values, required for natural effects",
+    "no measurement error in the exposure, mediators, outcome or covariates",
+)
+
+
+def _assumptions(plan: AnalysisPlan | None) -> list[str]:
+    """Return the assumptions implied by the declared interpretation mode."""
+
+    population = "retained_analysis_rows"
+    interpretation = "model_standardized"
+    order: tuple[str, ...] = ()
+    if plan is not None:
+        interpretation = plan.contrast.interpretation
+        order = tuple(node.response for node in plan.nodes[:-1])
+        if plan.contrast.moderator_values:
+            population = (
+                f"retained_analysis_rows_with_{moderator_configuration_label(plan.contrast.moderator_values)}"
+            )
+    assumptions = [
+        "observed-variable mediation analysis",
+        "rows are treated as independent observations",
+        "endogenous nodes use supported Gaussian or Bernoulli families",
+        f"effects are standardized over {population}",
+        "every declared conditional node model is correctly specified",
+        (
+            f"mediators are factorized in the declared factorization order {list(order)}; "
+            "for parallel mediators this order is a modelling choice, not a causal claim"
+        ),
+        "latent variables, clustered rows, ordinal nodes, and count nodes are unsupported",
+    ]
+    if interpretation == "assumption_based_causal":
+        assumptions.append(
+            "effects are interpreted causally only under the following identification assumptions:"
+        )
+        assumptions.extend(_IDENTIFICATION_ASSUMPTIONS)
+    else:
+        assumptions.append(
+            "effects are model-standardized contrasts, not identified causal effects; "
+            "a causal reading requires the identification assumptions, which were not declared"
+        )
+    return assumptions
+
+
 def assemble_diagnostics(
     plan: AnalysisPlan | None,
     fitted: FittedSystem | None,
@@ -302,14 +354,7 @@ def assemble_diagnostics(
         "contrasts": [],
         "reason": None,
     }
-    assumptions = [
-        "observed-variable mediation analysis",
-        "rows are treated as independent observations",
-        "endogenous nodes use supported Gaussian or Bernoulli families",
-        "effects are model-standardized over retained_analysis_rows",
-        "interpretation is assumption-based under the declared model",
-        "latent variables, clustered rows, ordinal nodes, and count nodes are unsupported",
-    ]
+    assumptions = _assumptions(plan)
     if plan is not None and plan.missing == "complete_case":
         assumptions.append("complete-case population after declared missingness exclusion")
     exclusions = {
