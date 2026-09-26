@@ -576,6 +576,84 @@ Each task entry should record:
 - **Files:** `scripts/aggregate_shards.py`; `src/mintmed/experiments/mediation_validation_reporting.py`; `tests/integration/test_evidence_aggregation.py`; `tests/integration/test_mediation_validation.py`; this decision log.
 - **Verification:** Full suite `440 passed` at `6c8a306`.
 
+#### Task 02 correction — picklable frozen mappings, one implementation (audit BUG-14)
+
+- **Date:** 2026-09-26
+- **Task:** Task 2 (shared types); correction from the Tasks 1–14 audit (BUG-14).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `types._FrozenDict` defines `__reduce__`, which rebuilds from a plain dict, and `__copy__`, which returns itself because the mapping is immutable.
+  - The duplicate classes in `spec.py` and `simulation/mediation.py` are removed; both import the `types.py` class.
+- **Rationale:** Pickle's dict-subclass protocol and `copy.copy` refill an empty instance through the blocked `__setitem__`. As a result, no result or specification object could be pickled, returned from a worker process, cached, or shallow-copied.
+- **Actions:** Red contracts in `4ad3a02`. Implementation in `184c9e2`.
+- **Evidence:**
+  - `EffectEstimate`, `BootstrapResult`, `MediationResult`, `ModelSpec`, `AnalysisPlan` and fixture specs all round-trip through pickle to equal values.
+  - Frozen mappings survive `copy.copy`, `copy.deepcopy` and pickle while staying read-only.
+  - The test compares values rather than pickle bytes, because shared references serialize differently after a round trip.
+- **Files:** `src/mintmed/types.py`; `src/mintmed/spec.py`; `src/mintmed/simulation/mediation.py`; `tests/mediation/test_serialization.py`; this decision log.
+- **Verification:** Full suite green at `184c9e2`.
+
+#### Tasks 03/08 correction — integration_draws validated against the engine budgets (audit BUG-15)
+
+- **Date:** 2026-09-26
+- **Task:** Task 3 (specification) and Task 8 (g-formula); correction from the Tasks 1–14 audit (BUG-15).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `_validate_computation`, which both the YAML and template paths run, requires `integration_draws ∈ {256, 512, 1024, 2048, 4096}` (`spec._INTEGRATION_DRAW_BUDGETS`, matching `gformula._BUDGETS`), with code `invalid_computation`.
+  - `api._failure_state` maps an engine-level `invalid_draw_budget` to `invalid_specification` rather than `integration_unresolved`.
+  - Relaxing the engine to accept any power of two was not chosen, because the budget ladder is part of the locked integration rule.
+- **Rationale:** A specification with `integration_draws: 1000` used to validate. It then failed only if the data happened to route to Sobol, and it was reported as a numerical failure.
+- **Actions:** Red contracts in `8b3086f`. Implementation in `1419291`. The plan-test fixture's `integration_draws=8` became 256.
+- **Evidence:** Draw counts 8, 128, 1000 and 8192 are rejected on both paths with the same code and path, and all five supported budgets load. The failure-state mapping is tested directly.
+- **Files:** `src/mintmed/spec.py`; `src/mintmed/api.py`; `tests/mediation/test_spec.py`; `tests/mediation/test_analysis.py`; `tests/mediation/test_plan.py`; this decision log.
+- **Verification:** Full suite green at `1419291`.
+
+#### Tasks 08/14 correction — general exact linear routing and a measured Hermite accuracy check (audit BUG-16)
+
+- **Date:** 2026-09-26
+- **Task:** Task 8 (integration) and Task 14 (runtime evidence); correction from the Tasks 1–14 audit (BUG-16).
+- **Status:** Completed. The runtime forecast is unaffected; see Evidence.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  1. `_is_gaussian_linear` accepts any all-Gaussian, all-`LINEAR`, interaction-free system: any mediator count, either arrangement, and correlated parallel residuals included. Outcome means are linear in the mediators, and mediator means propagate linearly in factorization order, so plugging in means is exact. The old "one mediator, or three sequential" gate fitted `cell07` and the Sobol fixtures, not the methodology.
+     - Sobol-contract tests that depended on the narrow gate now use a quadratic outcome term, which keeps them on Sobol.
+     - The `serial_two` fixture now routes exactly. No validation cell changes route: cells 06 and 10 have interactions, and cell 07 was already exact.
+  2. The point-fit Gauss–Hermite path now measures its accuracy instead of asserting it:
+     - The three primary regime means are evaluated at order 64 (`_GAUSS_HERMITE_ORDER`) and order 32 (`_GAUSS_HERMITE_CHECK_ORDER`).
+     - `hermite_order_delta` is recorded with the relative tolerance, the outcome SD and the absolute tolerance.
+     - The system is `integration_failed`, with an `integration_unresolved` issue, when the orders disagree by more than `integration_tolerance × outcome SD`.
+     - Regime means are compared rather than effects. Quadrature error shared by every regime, such as a mediator-variance term in a quadratic outcome, cancels in the effects, so an order-1 rule would otherwise pass. A test pins this.
+     - Bootstrap refits keep the fixed order without repeating the check, just as they keep the accepted Sobol budget.
+- **Actions:** Red contracts in `23990db`. Implementation in `2bc63c4`.
+- **Evidence:**
+  - Exact routing is tested for `serial_two`, `serial_three`, `linear` and correlated parallel mediators. The exact means agree with a 4096-draw Sobol evaluation within `2e-3`.
+  - The Hermite diagnostics report the delta for `quadratic_b`, and forcing the check order to 1 makes the fit `integration_failed`.
+  - Runtime: the point-fit check adds about 10–30 ms per dataset on cells 08, 09 and 12 (measured before and after). That is about 15 CPU-seconds across the matrix, against the 10.9 CPU-hour forecast, and refits are unchanged. The pilot was therefore not re-run.
+- **Files:** `src/mintmed/gformula.py`; `tests/mediation/test_gformula.py`; `tests/mediation/test_effects.py`; `tests/mediation/test_uncertainty.py`; `tests/integration/test_reference_agreement.py`; this decision log.
+- **Verification:** Full suite `459 passed` at `2bc63c4`, with the slow statsmodels reference test deselected for that interim run.
+- **Follow-up:** `CATEGORICAL` terms on non-mediator variables, such as a binary exposure, still exclude a model from exact linear routing. The routing would stay exact if they were allowed, so this could be extended later.
+
+#### Task 12 correction — realistic, CI-checked examples (audit BUG-17)
+
+- **Date:** 2026-09-26
+- **Task:** Task 12 (examples and CI); correction from the Tasks 1–14 audit (BUG-17).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - All three examples use the default `integration_tolerance: 1.0e-3` instead of `1.0`, and 50 `quick_diagnostic` replicates instead of 2. `max_seconds` is 120/120/180.
+  - The validation smoke config also uses `1.0e-3`.
+  - Example data are regenerated by the new `scripts/generate_example_data.py`, which reproduces the committed CSVs byte for byte from seeded generators. `parallel` (200 rows) and `serial_moderated` (160 rows) come from the Task 7 fixtures `parallel_correlated` and `moderated_serial`. `single` (150 rows) uses the linear single-mediator equations with a balanced 0/1 exposure, because its spec declares a binary exposure. The old data had only 12–16 rows.
+  - The parallel example keeps its spline × linear interaction. At 12 rows, 35 of 50 resamples were rank-deficient; at 200 rows none are.
+  - The moderated example declares its 0/1 indicators `A` and `W` with `basis: linear`. That is the same model as treatment-coded categorical terms, with estimates identical to 1e-15, and it avoids a Patsy per-value categorical conversion that made the 50-replicate run take about 266 s instead of 22 s. That slowdown is flagged as a separate task, not fixed here.
+  - The new `scripts/check_example_outputs.py` fails when an example's `overall_status` is not `complete` or `complete_with_warnings`, or when more than 10% of bootstrap replicates fail. CI runs it after the three examples, and the CLI example test applies it too.
+- **Rationale:** A tolerance of 1.0 disabled the integration accuracy check, and 2 replicates hid the interval labelling and the parallel example's bootstrap failures. CI passed without exercising the default numerical contract.
+- **Actions:** Red contracts in `29aff9f`. Implementation in `5a99e36`.
+- **Evidence:** Locally, the three examples run in 8, 16 and 23 s. Each is `complete_with_warnings` with 50 of 50 successful replicates and passes the checker. The smoke validation completes all 10 datasets at `1e-3`, with cell 06 at 512 draws.
+- **Files:** `examples/*/analysis.yaml`; `examples/*/data.csv`; `configs/mediation_validation_smoke.yaml`; `.github/workflows/verification.yml`; `scripts/generate_example_data.py`; `scripts/check_example_outputs.py`; `tests/integration/test_examples.py`; `tests/integration/test_cli.py`; this decision log.
+- **Verification:** Full suite `468 passed` at `5a99e36`. The example tests add about 36 s to the suite.
+
 ## Reusable entry template
 
 ### Task NN — Name
