@@ -24,6 +24,7 @@ from mintmed.experiments.mediation_validation import (
     selected_combinations,
 )
 from mintmed.experiments.mediation_validation_reporting import (
+    evaluate_gates,
     expand_metrics,
     summarize_metrics,
     wilson,
@@ -441,6 +442,62 @@ def test_metric_expansion_and_summary_count_unavailable_intervals_as_noncoverage
     assert int(pnde.coverage_trials) == 1
     assert int(pnde.coverage_successes) == 0
     assert pnde.coverage == pytest.approx(0.0)
+
+
+def _symmetric_bias_frames(config, spread: float = 0.1, shift: float = 0.0):
+    rows = []
+    truths = {"TE": 0.45, "PNDE": 0.2, "TNIE": 0.25}
+    for replicate in range(10):
+        sign = 1.0 if replicate % 2 == 0 else -1.0
+        metrics = {
+            name: metric_record(truth, truth + shift + sign * spread, truth - 1.0, truth + 1.0, status="complete")
+            for name, truth in truths.items()
+        }
+        rows.append(_raw_row("cell01_linear_n100", replicate, metrics, config.config_hash))
+    raw = pd.DataFrame(rows)
+    long = expand_metrics(raw, config)
+    return raw, summarize_metrics(long, raw, config)
+
+
+def test_absolute_bias_is_the_absolute_mean_bias_not_the_mean_absolute_error() -> None:
+    config = load_config(SMOKE)
+    _raw, summary = _symmetric_bias_frames(config, spread=0.1, shift=-0.02)
+
+    te = summary.loc[summary.metric == "TE"].iloc[0]
+    assert te.mean_bias == pytest.approx(-0.02)
+    assert te.absolute_bias == pytest.approx(0.02)
+    assert te.mean_absolute_error == pytest.approx(0.1)
+    biases = pd.Series([0.08 if index % 2 == 0 else -0.12 for index in range(10)])
+    assert te.bias_mc_se == pytest.approx(biases.std(ddof=1) / (10 ** 0.5))
+
+
+def test_unbiased_symmetric_errors_pass_the_continuous_bias_gate() -> None:
+    config = load_config(SMOKE)
+    raw, summary = _symmetric_bias_frames(config, spread=0.1)
+    sd = cell_definition("cell01_linear_n100").population_outcome_sd
+    # The mean absolute error alone would breach the 0.05 SD gate.
+    assert 0.1 / sd > dict(config.gates)["continuous_abs_bias_sd"]
+
+    result = evaluate_gates(summary, raw, config)["gates"]["continuous_abs_bias_sd"]
+
+    assert result["observed"] == pytest.approx(0.0, abs=1e-12)
+    assert result["observed"] <= result["threshold"]
+    expected_se = pd.Series([0.1, -0.1] * 5).std(ddof=1) / (10 ** 0.5) / sd
+    assert result["observed_mc_se"] == pytest.approx(expected_se)
+    assert result["threshold_within_mc_band"] is True
+
+
+def test_biased_rows_still_fail_the_continuous_bias_gate() -> None:
+    config = load_config(SMOKE)
+    sd = cell_definition("cell01_linear_n100").population_outcome_sd
+    raw, summary = _symmetric_bias_frames(config, spread=0.0, shift=0.2 * sd)
+
+    result = evaluate_gates(summary, raw, config)["gates"]["continuous_abs_bias_sd"]
+
+    assert result["observed"] == pytest.approx(0.2)
+    assert result["passed"] is False
+    assert result["observed_mc_se"] == pytest.approx(0.0, abs=1e-12)
+    assert result["threshold_within_mc_band"] is False
 
 
 def test_write_report_emits_required_artifacts_without_private_row_fields(tmp_path: Path) -> None:
