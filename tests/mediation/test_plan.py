@@ -429,3 +429,18 @@ def test_edges_matched_by_terms_add_no_edge_warning(valid_spec, valid_frame):
     plan = estimate_plan(valid_frame, valid_spec)
 
     assert not [issue for issue in plan.warnings if issue.code == "edge_without_term"]
+
+
+def test_analysis_hash_includes_numerical_library_versions(valid_spec, valid_frame, monkeypatch):
+    import mintmed.spec as spec_module
+
+    versions = spec_module._software_versions()
+    assert set(versions) == {"mintmed", "numpy", "pandas", "patsy", "scipy", "statsmodels"}
+    baseline = estimate_plan(valid_frame, valid_spec).analysis_hash
+
+    for library in ("numpy", "scipy", "statsmodels", "patsy"):
+        changed = {**versions, library: versions[library] + ".post999"}
+        monkeypatch.setattr(spec_module, "_software_versions", lambda changed=changed: changed)
+        assert estimate_plan(valid_frame, valid_spec).analysis_hash != baseline, library
+    monkeypatch.setattr(spec_module, "_software_versions", lambda: versions)
+    assert estimate_plan(valid_frame, valid_spec).analysis_hash == baseline
