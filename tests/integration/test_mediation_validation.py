@@ -668,3 +668,74 @@ def test_write_report_rejects_row_provenance_that_contradicts_the_config(
 
     with pytest.raises(ValueError, match=key):
         write_report(pd.DataFrame([row]), config, tmp_path)
+
+
+def test_row_provenance_records_bootstrap_success_and_failure_counts() -> None:
+    payload = {
+        "overall_status": "point_only",
+        "effects": [
+            {"name": name, "estimate": 0.2, "lower": None, "upper": None, "status": "ok", "reason": None}
+            for name in ("TE", "PNDE", "TNIE")
+        ],
+        "bootstrap": {"requested": 399, "attempted": 399, "successful": 398, "failed": 1, "intervals": []},
+        "diagnostics": {},
+        "provenance": {},
+    }
+    row = row_from_payload(
+        payload,
+        config=load_config(FULL),
+        cell=cell_definition("cell01_linear_n100"),
+        replicate=0,
+        data_seed=1,
+        analysis_seed=2,
+        runtime_seconds=0.1,
+    )
+
+    provenance = json.loads(row["provenance_json"])
+    assert provenance["bootstrap_successful"] == 398
+    assert provenance["bootstrap_failed"] == 1
+
+
+def test_summary_counts_intervals_withheld_by_one_or_two_failed_refits() -> None:
+    config = load_config(SMOKE)
+    rows = []
+    for replicate, failed in enumerate((0, 1, 2, 3)):
+        available = failed == 0
+        metrics = {
+            name: metric_record(
+                truth,
+                truth,
+                truth - 0.5 if available else None,
+                truth + 0.5 if available else None,
+                status="complete" if available else "point_only",
+            )
+            for name, truth in (("TE", 0.45), ("PNDE", 0.2), ("TNIE", 0.25))
+        }
+        row = _raw_row("cell01_linear_n100", replicate, metrics, config.config_hash)
+        row["provenance_json"] = json.dumps(
+            {"config_hash": config.config_hash, "bootstrap_failed": failed, "bootstrap_successful": 3 - failed}
+        )
+        rows.append(row)
+    raw = pd.DataFrame(rows)
+
+    summary = summarize_metrics(expand_metrics(raw, config), raw, config)
+    te = summary.loc[summary.metric == "TE"].iloc[0]
+
+    assert int(te.few_failure_withheld_rows) == 2
+    assert te.few_failure_withheld_rate == pytest.approx(0.5)
+
+
+def test_validation_report_states_the_zero_failure_interval_policy(tmp_path: Path) -> None:
+    config = load_config(FULL)
+    metrics = {
+        name: metric_record(truth, truth, truth - 0.5, truth + 0.5, status="complete")
+        for name, truth in (("TE", 0.45), ("PNDE", 0.2), ("TNIE", 0.25))
+    }
+    raw = pd.DataFrame([_raw_row("cell01_linear_n100", 0, metrics, config.config_hash)])
+
+    write_report(raw, config, tmp_path)
+
+    report = (tmp_path / "report.md").read_text(encoding="utf-8")
+    summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
+    assert "zero-failure" in report
+    assert summary["provenance"]["interval_rule"] == "all_399_refits_must_succeed"
