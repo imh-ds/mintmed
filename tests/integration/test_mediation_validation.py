@@ -627,3 +627,44 @@ def test_frozen_config_resolves_nonlinear_parallel_sobol_cell() -> None:
     assert result.diagnostics["integration"]["method"] == "sobol_blocked"
     assert result.diagnostics["overall_status"] != "integration_unresolved"
     assert {effect.name for effect in result.effects} == {"TE", "PNDE", "TNIE"}
+
+
+def test_write_report_rejects_rows_from_another_configuration(tmp_path: Path) -> None:
+    config = load_config(SMOKE)
+    metrics = {"TE": metric_record(0.45, 0.44, 0.2, 0.7, status="complete"),
+               "PNDE": metric_record(0.2, 0.21, 0.0, 0.4, status="complete"),
+               "TNIE": metric_record(0.25, 0.23, 0.1, 0.5, status="complete")}
+    raw = pd.DataFrame(
+        [
+            _raw_row("cell01_linear_n100", 0, metrics, config.config_hash),
+            _raw_row("cell01_linear_n100", 1, metrics, "0" * 64),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="config_hash"):
+        write_report(raw, config, tmp_path)
+    assert not (tmp_path / "summary.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("bootstrap_requested", 999), ("bootstrap_mode", "standard"), ("config_hash", "f" * 64)],
+)
+def test_write_report_rejects_row_provenance_that_contradicts_the_config(
+    tmp_path: Path, key: str, value: object
+) -> None:
+    config = load_config(SMOKE)
+    metrics = {"TE": metric_record(0.45, 0.44, 0.2, 0.7, status="complete"),
+               "PNDE": metric_record(0.2, 0.21, 0.0, 0.4, status="complete"),
+               "TNIE": metric_record(0.25, 0.23, 0.1, 0.5, status="complete")}
+    row = _raw_row("cell01_linear_n100", 0, metrics, config.config_hash)
+    provenance = {
+        "config_hash": config.config_hash,
+        "bootstrap_requested": config.bootstrap_replicates,
+        "bootstrap_mode": config.bootstrap_mode,
+    }
+    provenance[key] = value
+    row["provenance_json"] = json.dumps(provenance)
+
+    with pytest.raises(ValueError, match=key):
+        write_report(pd.DataFrame([row]), config, tmp_path)

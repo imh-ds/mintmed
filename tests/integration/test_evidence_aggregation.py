@@ -161,3 +161,64 @@ def test_combine_rejects_different_dispatch_designs(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="disagree on field 'conditions'"):
         combine(module_path, [config_a, config_b], [tmp_path / "a", tmp_path / "b"], tmp_path / "out")
+
+
+def _write_hashed_experiment(module_dir: Path) -> str:
+    package = module_dir / "hashed_evidence"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "runner.py").write_text(
+        "from dataclasses import dataclass\n"
+        "from pathlib import Path\n"
+        "import yaml\n\n"
+        "@dataclass(frozen=True)\n"
+        "class Config:\n"
+        "    conditions: tuple[str, ...]\n"
+        "    replicates: int\n"
+        "    config_hash: str\n\n"
+        "COMBINATION_COLUMNS = (\"condition\", \"replicate\")\n\n"
+        "def load_config(path):\n"
+        "    values = yaml.safe_load(Path(path).read_text(encoding=\"utf-8\"))\n"
+        "    return Config(tuple(values[\"conditions\"]), int(values[\"replicates\"]), str(values[\"config_hash\"]))\n\n"
+        "def expected_combinations(config):\n"
+        "    return {(condition, replicate) for condition in config.conditions "
+        "for replicate in range(config.replicates)}\n\n"
+        "def expected_row_count(config):\n"
+        "    return len(expected_combinations(config))\n",
+        encoding="utf-8",
+    )
+    (package / "runner_reporting.py").write_text(
+        "def write_report(raw, config, output_dir):\n"
+        "    (output_dir / \"report.txt\").write_text(f\"rows={len(raw)}\\n\", encoding=\"utf-8\")\n",
+        encoding="utf-8",
+    )
+    sys.path.insert(0, str(module_dir))
+    return "hashed_evidence.runner"
+
+
+def test_aggregate_rejects_shards_from_another_configuration(tmp_path: Path) -> None:
+    module_path = _write_hashed_experiment(tmp_path / "modules")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump({"conditions": ["linear", "nonlinear"], "replicates": 2, "config_hash": "frozen"}),
+        encoding="utf-8",
+    )
+    shards = tmp_path / "shards"
+    _write_rows(
+        shards / "a",
+        [
+            {"condition": "linear", "replicate": 0, "config_hash": "frozen"},
+            {"condition": "nonlinear", "replicate": 0, "config_hash": "frozen"},
+        ],
+    )
+    _write_rows(
+        shards / "smoke",
+        [
+            {"condition": "linear", "replicate": 1, "config_hash": "smoke"},
+            {"condition": "nonlinear", "replicate": 1, "config_hash": "smoke"},
+        ],
+    )
+
+    with pytest.raises(SystemExit, match=r"config_hash.*smoke"):
+        aggregate(module_path, config_path, shards, tmp_path / "aggregated")
+    assert not (tmp_path / "aggregated" / "raw_metrics.csv").exists()
