@@ -349,6 +349,8 @@ _T = TypeVar("_T", bound=Enum)
 _MISSING = object()
 _SUPPORTED_TYPES = {"continuous", "binary", "categorical", "ordinal", "count"}
 _ENDOGENOUS_UNSUPPORTED_TYPES = {"ordinal", "count"}
+_SPARSE_EVENT_THRESHOLD = 5
+_MIN_OBSERVATIONS_PER_PARAMETER = 10
 # Starting Sobol budgets accepted by the g-formula engine (gformula._BUDGETS).
 _INTEGRATION_DRAW_BUDGETS = (256, 512, 1024, 2048, 4096)
 _INTERPRETATIONS = {"assumption_based_causal", "model_standardized"}
@@ -459,7 +461,7 @@ def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
     support = _support_summaries(retained, variables)
     _validate_counterfactual_support(retained, spec, variables)
     nodes = _compile_nodes(spec, variables)
-    issues, binary_counts = _build_issues(retained, spec, variables)
+    issues, binary_counts, complexity = _build_issues(retained, spec, variables)
 
     specification_hash = hashlib.sha256(spec.canonical_json().encode("utf-8")).hexdigest()
     data_fingerprint = _data_fingerprint(selected, analysis_columns)
@@ -514,6 +516,7 @@ def estimate_plan(data: pd.DataFrame, spec: ModelSpec) -> AnalysisPlan:
         },
         "support": support,
         "binary_counts": binary_counts,
+        "complexity": complexity,
         "scientific_edges": [list(edge) for edge in spec.scientific.edges],
         "arrangement": spec.scientific.arrangement,
         "factorization_order": list(spec.scientific.mediator_order),
@@ -1646,11 +1649,79 @@ def _compile_nodes(
     return tuple(compiled)
 
 
+def _term_columns(term: TermSpec, variables: Mapping[str, VariableSpec]) -> int:
+    """Return the design columns one declared term contributes."""
+
+    if term.kind is TermKind.QUADRATIC:
+        # The quadratic basis is the squared term alone: I(x ** 2).
+        return 1
+    if term.kind is TermKind.NATURAL_SPLINE:
+        return int(term.df or 0)
+    if term.kind is TermKind.CATEGORICAL:
+        return max(len(variables[term.variable].levels) - 1, 0)
+    return 1
+
+
+def _declared_parameter_count(node: NodeSpec, variables: Mapping[str, VariableSpec]) -> int:
+    """Count a node's coefficients from its declared terms (matches the Patsy design)."""
+
+    columns = {term.variable: _term_columns(term, variables) for term in node.terms}
+    interactions = sum(columns[item.left] * columns[item.right] for item in node.interactions)
+    return int(bool(node.intercept)) + sum(columns.values()) + interactions
+
+
+def _complexity_issues(
+    data: pd.DataFrame,
+    spec: ModelSpec,
+    variables: Mapping[str, VariableSpec],
+) -> tuple[list[Issue], dict[str, Mapping[str, Any]]]:
+    """Preflight observations (and Bernoulli minority events) per parameter."""
+
+    nodes = spec.node_by_response
+    issues: list[Issue] = []
+    complexity: dict[str, Mapping[str, Any]] = {}
+    for response in (*spec.scientific.mediator_order, spec.outcome.name):
+        node = nodes[response]
+        parameters = _declared_parameter_count(node, variables)
+        observations_per_parameter = len(data) / parameters if parameters else float("inf")
+        events_per_parameter: float | None = None
+        if node.family is Family.BERNOULLI:
+            series = data[response]
+            minority = min(int((series == 1).sum()), int((series == 0).sum()))
+            events_per_parameter = minority / parameters if parameters else float("inf")
+        complexity[response] = {
+            "parameters": parameters,
+            "observations_per_parameter": observations_per_parameter,
+            "events_per_parameter": events_per_parameter,
+            "threshold": _MIN_OBSERVATIONS_PER_PARAMETER,
+        }
+        low_rows = observations_per_parameter < _MIN_OBSERVATIONS_PER_PARAMETER
+        low_events = events_per_parameter is not None and events_per_parameter < _MIN_OBSERVATIONS_PER_PARAMETER
+        if low_rows or low_events:
+            detail = (
+                f"{events_per_parameter:.1f} minority events per parameter"
+                if low_events
+                else f"{observations_per_parameter:.1f} observations per parameter"
+            )
+            issues.append(
+                Issue(
+                    code="low_observations_per_parameter",
+                    message=(
+                        f"{response} has {parameters} parameters and {detail}, below "
+                        f"{_MIN_OBSERVATIONS_PER_PARAMETER}; estimates may be unstable"
+                    ),
+                    status=AnalysisStatus.WARNING,
+                    node=response,
+                )
+            )
+    return issues, complexity
+
+
 def _build_issues(
     data: pd.DataFrame,
     spec: ModelSpec,
     variables: Mapping[str, VariableSpec],
-) -> tuple[tuple[Issue, ...], dict[str, Mapping[str, int]]]:
+) -> tuple[tuple[Issue, ...], dict[str, Mapping[str, int]], dict[str, Mapping[str, Any]]]:
     issues: list[Issue] = []
     binary_counts: dict[str, Mapping[str, int]] = {}
     for response in (*spec.scientific.mediator_order, spec.outcome.name):
@@ -1660,8 +1731,12 @@ def _build_issues(
         series = data[response]
         events = int((series == 1).sum())
         non_events = int((series == 0).sum())
-        binary_counts[response] = {"events": events, "non_events": non_events}
-        if events < 5 or non_events < 5:
+        binary_counts[response] = {
+            "events": events,
+            "non_events": non_events,
+            "threshold": _SPARSE_EVENT_THRESHOLD,
+        }
+        if events < _SPARSE_EVENT_THRESHOLD or non_events < _SPARSE_EVENT_THRESHOLD:
             issues.append(
                 Issue(
                     code="sparse_binary_events",
@@ -1674,6 +1749,8 @@ def _build_issues(
                 )
             )
     issues.extend(_edge_term_issues(spec))
+    complexity_issues, complexity = _complexity_issues(data, spec, variables)
+    issues.extend(complexity_issues)
     if len(data) < 100:
         issues.append(
             Issue(
@@ -1682,7 +1759,7 @@ def _build_issues(
                 status=AnalysisStatus.WARNING,
             )
         )
-    return tuple(issues), binary_counts
+    return tuple(issues), binary_counts, complexity
 
 
 def _data_fingerprint(frame: pd.DataFrame, columns: tuple[str, ...]) -> str:

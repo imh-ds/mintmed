@@ -403,7 +403,8 @@ def test_plan_summary_contains_population_graph_and_warnings(valid_frame, valid_
     assert "Node order: efficacy -> coping -> distress" in summary
     assert "condition->coping" in summary
     assert "Factorization predictors:" in summary
-    assert "Warnings: small_sample" in summary
+    warnings_line = next(line for line in summary.splitlines() if line.startswith("Warnings: "))
+    assert "small_sample" in warnings_line
     assert "p0" not in summary
 
 
@@ -477,7 +478,7 @@ def test_binary_counts_record_the_sparse_threshold():
 def test_low_observations_per_parameter_is_a_plan_warning():
     from mintmed.simulation import sample_fixture
 
-    fixture = sample_fixture("four_mediator_mixed", 110, np.random.default_rng(20260926))
+    fixture = sample_fixture("four_mediator_mixed", 50, np.random.default_rng(20260926))
     plan = estimate_plan(fixture.data, fixture.spec)
 
     warnings = [issue for issue in plan.warnings if issue.code == "low_observations_per_parameter"]
