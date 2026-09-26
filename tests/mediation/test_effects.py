@@ -14,7 +14,7 @@ from mintmed.effects import (
 )
 from mintmed.gformula import CommonDraws, compute_regime_means, fit_system
 from mintmed.simulation import sample_fixture
-from mintmed.spec import Family, estimate_plan
+from mintmed.spec import Family, TermKind, estimate_plan
 from mintmed.types import AnalysisStatus, RegimeMeans
 
 
@@ -76,15 +76,33 @@ def _fit_fixture(name: str, *, n: int = 120, tolerance: float = 1.0):
 def _additive_parallel_fixture():
     fixture = sample_fixture("parallel_correlated", 120, np.random.default_rng(20261009))
     outcome = replace(fixture.spec.nodes[-1], interactions=())
-    spec = replace(
-        fixture.spec,
-        nodes=(*fixture.spec.nodes[:-1], outcome),
-        computation=replace(fixture.spec.computation, integration_tolerance=1.0),
+    spec = _quadratic_outcome_term(
+        replace(
+            fixture.spec,
+            nodes=(*fixture.spec.nodes[:-1], outcome),
+            computation=replace(fixture.spec.computation, integration_tolerance=1.0),
+        ),
+        "M1",
     )
     plan = estimate_plan(fixture.data, spec)
     fitted = fit_system(fixture.data, plan)
     assert fitted.draws is not None
     return fixture, plan, fitted
+
+
+def _quadratic_outcome_term(spec, mediator: str):
+    """Make one outcome term quadratic so the system stays on the Sobol path.
+
+    All-linear Gaussian systems use exact mean propagation (audit BUG-16);
+    Sobol-contract tests need a nonlinear outcome with two Gaussian mediators.
+    """
+
+    outcome = spec.nodes[-1]
+    terms = tuple(
+        replace(term, kind=TermKind.QUADRATIC) if term.variable == mediator else term
+        for term in outcome.terms
+    )
+    return replace(spec, nodes=(*spec.nodes[:-1], replace(outcome, terms=terms)))
 
 
 def _parallel_binary_outcome_fixture():
@@ -197,7 +215,6 @@ def test_moderator_contrasts_reject_unsupported_values_with_typed_error():
 def test_parallel_contributions_refuse_nonparallel_structure():
     fixture, plan, fitted = _fit_fixture("serial_two")
     means = compute_regime_means(fixture.data, plan, fitted)
-    assert fitted.draws is not None
     result = parallel_contributions(
         fixture.data,
         plan,

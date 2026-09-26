@@ -12,9 +12,27 @@ from mintmed.spec import Family, TermKind, TermSpec, estimate_plan
 from mintmed.types import AnalysisStatus, RegimeMeans
 
 
-def _fixture(name: str, n: int = 160):
+def _fixture(name: str, n: int = 160, *, nonlinear: str | None = None):
     fixture = sample_fixture(name, n, np.random.default_rng(20260920))
-    return fixture, estimate_plan(fixture.data, fixture.spec)
+    spec = fixture.spec if nonlinear is None else _quadratic_outcome_term(fixture.spec, nonlinear)
+    if nonlinear is not None:
+        fixture = replace(fixture, spec=spec)
+    return fixture, estimate_plan(fixture.data, spec)
+
+
+def _quadratic_outcome_term(spec, mediator: str):
+    """Make one outcome term quadratic so the system stays on the Sobol path.
+
+    All-linear Gaussian systems use exact mean propagation (audit BUG-16);
+    Sobol-contract tests need a nonlinear outcome with two Gaussian mediators.
+    """
+
+    outcome = spec.nodes[-1]
+    terms = tuple(
+        replace(term, kind=TermKind.QUADRATIC) if term.variable == mediator else term
+        for term in outcome.terms
+    )
+    return replace(spec, nodes=(*spec.nodes[:-1], replace(outcome, terms=terms)))
 
 
 def test_public_contracts_and_common_draws_are_immutable():
@@ -65,7 +83,7 @@ def test_regime_means_result_contract_is_response_scale():
 def test_standardized_frame_iterator_matches_public_regime_mean():
     from mintmed.gformula import _iter_standardized_blocks, standardize_regime
 
-    fixture, plan, fitted = _fit("serial_two", n=90, tolerance=1.0)
+    fixture, plan, fitted = _fit("serial_two", n=90, tolerance=1.0, nonlinear="M2")
     assert fitted.draws is not None
     expected = standardize_regime(
         fixture.data,
@@ -95,9 +113,9 @@ def test_standardized_frame_iterator_matches_public_regime_mean():
     assert total / count == pytest.approx(expected, abs=1e-12)
 
 
-def _fit(name: str, n: int = 80, *, tolerance: float | None = None):
+def _fit(name: str, n: int = 80, *, tolerance: float | None = None, nonlinear: str | None = None):
     fixture = sample_fixture(name, n, np.random.default_rng(20260920 + n))
-    spec = fixture.spec
+    spec = fixture.spec if nonlinear is None else _quadratic_outcome_term(fixture.spec, nonlinear)
     if tolerance is not None:
         spec = replace(
             spec,
@@ -122,7 +140,7 @@ def test_parallel_gaussian_residual_dependence_is_nuisance_only():
 
 
 def test_serial_standardization_uses_generated_prior_mediators_and_is_block_stable():
-    fixture, plan, fitted = _fit("serial_two", 90, tolerance=1.0)
+    fixture, plan, fitted = _fit("serial_two", 90, tolerance=1.0, nonlinear="M2")
     assert fitted.status is AnalysisStatus.OK
     from mintmed.gformula import (
         _standardize_regime_with_block,
@@ -370,7 +388,7 @@ def test_four_mediator_system_preserves_order_and_finite_regimes():
 def test_invalid_draw_dimensions_and_failed_integration_are_typed():
     from mintmed.gformula import CommonDraws, GFormulaError, compute_regime_means, standardize_regime
 
-    fixture, plan, fitted = _fit("serial_two", 70, tolerance=1.0)
+    fixture, plan, fitted = _fit("serial_two", 70, tolerance=1.0, nonlinear="M2")
     with pytest.raises(GFormulaError) as caught:
         standardize_regime(
             fixture.data,
@@ -415,7 +433,7 @@ def test_node_order_and_node_fit_failures_keep_typed_context():
 def test_fixed_budget_fit_bypasses_adaptive_integration_selection(monkeypatch):
     import mintmed.gformula as gformula
 
-    fixture, plan = _fixture("serial_two", 80)
+    fixture, plan = _fixture("serial_two", 80, nonlinear="M2")
 
     def fail_if_selected(*_args, **_kwargs):
         raise AssertionError("bootstrap fixed-budget fitting must not adapt")

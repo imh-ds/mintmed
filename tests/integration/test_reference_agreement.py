@@ -17,6 +17,7 @@ from mintmed.effects import moderator_contrasts, parallel_contributions
 from mintmed.gformula import CommonDraws, compute_regime_means, fit_system, standardize_regime
 from mintmed.report import result_to_dict
 from mintmed.simulation import analytic_effects, sample_fixture
+from mintmed.spec import TermKind
 from mintmed.spec import estimate_plan
 from mintmed.experiments.mediation_validation import generate_cell
 
@@ -275,7 +276,12 @@ def _fit_parallel(name: str, *, additive: bool) -> tuple[pd.DataFrame, object, o
     spec = fixture.spec
     if additive:
         outcome = replace(spec.nodes[-1], interactions=())
-        spec = replace(spec, nodes=(*spec.nodes[:-1], outcome))
+        # A quadratic M1 term keeps the additive system on the Sobol path.
+        terms = tuple(
+            replace(term, kind=TermKind.QUADRATIC) if term.variable == "M1" else term
+            for term in outcome.terms
+        )
+        spec = replace(spec, nodes=(*spec.nodes[:-1], replace(outcome, terms=terms)))
     spec = replace(spec, computation=replace(spec.computation, integration_tolerance=1.0, bootstrap=0))
     plan = estimate_plan(fixture.data, spec)
     return fixture.data, plan, fit_system(fixture.data, plan)

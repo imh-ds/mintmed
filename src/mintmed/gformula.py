@@ -19,6 +19,8 @@ from .types import AnalysisStatus, Issue, RegimeMeans, _freeze_mapping
 BLOCK_SIZE = 256
 _BUDGETS = (256, 512, 1024, 2048, 4096)
 _GAUSS_HERMITE_ORDER = 64
+# Lower order evaluated once per point fit to measure Hermite accuracy.
+_GAUSS_HERMITE_CHECK_ORDER = 32
 
 
 class GFormulaError(ValueError):
@@ -318,11 +320,9 @@ def _is_gaussian_linear(plan: AnalysisPlan) -> bool:
         or len(plan.nodes) != len(mediator_names) + 1
     ):
         return False
-    if len(mediator_names) != 1 and not (
-        len(mediator_names) == 3
-        and plan.diagnostics.get("arrangement") == "sequential"
-    ):
-        return False
+    # Outcome means are linear in the mediators, and mediator means propagate
+    # linearly in factorization order, so plugging in means is exact for any
+    # mediator count, arrangement, or residual correlation.
     if any(node.family is not Family.GAUSSIAN for node in plan.nodes):
         return False
     if any(node.interactions for node in plan.nodes):
@@ -414,6 +414,69 @@ def fit_system(data: pd.DataFrame, plan: AnalysisPlan) -> FittedSystem:
             correlation=correlation,
         )
     if _supports_gauss_hermite(plan):
+        return _checked_gauss_hermite_system(data, retained, plan, nodes, correlation)
+    return _select_integration(retained, plan, nodes, correlation)
+
+
+def _checked_gauss_hermite_system(
+    data: pd.DataFrame,
+    retained: pd.DataFrame,
+    plan: AnalysisPlan,
+    nodes: tuple[FittedNode, ...],
+    correlation: np.ndarray | None,
+) -> FittedSystem:
+    """Return a Hermite system whose accuracy is measured, not asserted.
+
+    The three primary regime means are evaluated at ``_GAUSS_HERMITE_ORDER``
+    and at ``_GAUSS_HERMITE_CHECK_ORDER``; their largest difference must be
+    within the relative integration tolerance (outcome-SD units, as for
+    Sobol). Means are compared rather than effects because quadrature error
+    shared by every regime (for example a mediator-variance term) cancels in
+    the effects and would hide an inaccurate order. Bootstrap refits reuse
+    the fixed order without repeating the check, just as they reuse the
+    accepted Sobol budget.
+    """
+
+    system = _make_system(
+        plan,
+        nodes,
+        draws=None,
+        draw_budget=0,
+        method="gauss_hermite",
+        correlation=correlation,
+        diagnostics=_gauss_hermite_diagnostics(),
+    )
+    evaluations = {
+        order: np.asarray(
+            _gauss_hermite_means(
+                data,
+                plan,
+                system,
+                moderator_values=plan.contrast.moderator_values,
+                reference=plan.contrast.reference,
+                comparison=plan.contrast.comparison,
+                order=order,
+            ),
+            dtype=float,
+        )
+        for order in (_GAUSS_HERMITE_ORDER, _GAUSS_HERMITE_CHECK_ORDER)
+    }
+    delta = float(np.max(np.abs(evaluations[_GAUSS_HERMITE_ORDER] - evaluations[_GAUSS_HERMITE_CHECK_ORDER])))
+    tolerance = float(plan.computation.integration_tolerance)
+    outcome_scale = _outcome_scale(retained, plan)
+    absolute_tolerance = tolerance * outcome_scale
+    resolved = bool(np.isfinite(delta) and delta <= absolute_tolerance)
+    diagnostics = {
+        **_gauss_hermite_diagnostics(),
+        "check_order": _GAUSS_HERMITE_CHECK_ORDER,
+        "hermite_order_delta": delta,
+        "tolerance": tolerance,
+        "tolerance_scale": "outcome_sd",
+        "outcome_scale": outcome_scale,
+        "absolute_tolerance": absolute_tolerance,
+        "status": (AnalysisStatus.OK if resolved else AnalysisStatus.INTEGRATION_FAILED).value,
+    }
+    if resolved:
         return _make_system(
             plan,
             nodes,
@@ -421,9 +484,27 @@ def fit_system(data: pd.DataFrame, plan: AnalysisPlan) -> FittedSystem:
             draw_budget=0,
             method="gauss_hermite",
             correlation=correlation,
-            diagnostics=_gauss_hermite_diagnostics(),
+            diagnostics=diagnostics,
         )
-    return _select_integration(retained, plan, nodes, correlation)
+    issue = Issue(
+        code="integration_unresolved",
+        message=(
+            f"Gauss-Hermite orders {_GAUSS_HERMITE_ORDER} and {_GAUSS_HERMITE_CHECK_ORDER} disagree by "
+            f"{delta:.3g}, more than the relative tolerance {tolerance:.3g} (x outcome SD {outcome_scale:.6g})"
+        ),
+        status=AnalysisStatus.INTEGRATION_FAILED,
+    )
+    return _make_system(
+        plan,
+        nodes,
+        draws=None,
+        draw_budget=0,
+        method="gauss_hermite",
+        status=AnalysisStatus.INTEGRATION_FAILED,
+        issues=(issue,),
+        correlation=correlation,
+        diagnostics=diagnostics,
+    )
 
 
 def _draw_seed(base_seed: int, purpose: int, draw_count: int) -> int:
@@ -1016,18 +1097,22 @@ def _gauss_hermite_branches(
     *,
     mediator_exposure: object,
     moderator_values: Mapping[str, object],
+    order: int | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, int]:
     """Build one participant-level Hermite and binary mediator branch table.
 
     With only Bernoulli mediators the table is exact enumeration, so it also
-    serves ``exact_binary_mediators`` contribution evaluation.
+    serves ``exact_binary_mediators`` contribution evaluation. ``order``
+    defaults to ``_GAUSS_HERMITE_ORDER``.
     """
+
+    order = _GAUSS_HERMITE_ORDER if order is None else int(order)
 
     retained = _retained_frame(data, plan)
     if len(retained) == 0:
         raise _error("empty_standardization", AnalysisStatus.FIT_FAILED, "standardization produced no outcome cells")
 
-    errors, weights = np.polynomial.hermite.hermgauss(_GAUSS_HERMITE_ORDER)
+    errors, weights = np.polynomial.hermite.hermgauss(order)
     errors = np.sqrt(2.0) * np.asarray(errors, dtype=float)
     weights = np.asarray(weights, dtype=float) / np.sqrt(np.pi)
     branches = _regime_frame(retained, plan, mediator_exposure, moderator_values)
@@ -1056,7 +1141,7 @@ def _gauss_hermite_branches(
             )
             continue
 
-        expanded = _repeat_frame(branches, _GAUSS_HERMITE_ORDER)
+        expanded = _repeat_frame(branches, order)
         try:
             mean = np.asarray(_predict_mean(node, branches), dtype=float).reshape(-1)
         except NodeFitError as exc:
@@ -1068,12 +1153,12 @@ def _gauss_hermite_branches(
                 regime=(mediator_exposure, mediator_exposure),
                 details=dict(exc.details),
             ) from exc
-        expanded[mediator_name] = np.repeat(mean, _GAUSS_HERMITE_ORDER) + np.tile(
+        expanded[mediator_name] = np.repeat(mean, order) + np.tile(
             float(node.sigma) * errors,
             len(mean),
         )
         branches = expanded
-        branch_weights = np.repeat(branch_weights, _GAUSS_HERMITE_ORDER) * np.tile(
+        branch_weights = np.repeat(branch_weights, order) * np.tile(
             weights,
             len(mean),
         )
@@ -1088,6 +1173,7 @@ def _gauss_hermite_means(
     moderator_values: Mapping[str, object],
     reference: object,
     comparison: object,
+    order: int | None = None,
 ) -> tuple[float, float, float]:
     """Evaluate all primary Hermite regimes with one outcome transform."""
 
@@ -1097,6 +1183,7 @@ def _gauss_hermite_means(
         fitted,
         mediator_exposure=reference,
         moderator_values=moderator_values,
+        order=order,
     )
     comparison_branches, comparison_weights, comparison_count = _gauss_hermite_branches(
         data,
@@ -1104,6 +1191,7 @@ def _gauss_hermite_means(
         fitted,
         mediator_exposure=comparison,
         moderator_values=moderator_values,
+        order=order,
     )
     if comparison_count != retained_count:
         raise _error(

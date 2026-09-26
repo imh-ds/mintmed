@@ -10,7 +10,7 @@ import pytest
 from mintmed.effects import moderator_contrasts, natural_effects, parallel_contributions
 from mintmed.gformula import compute_regime_means, fit_system
 from mintmed.simulation import sample_fixture
-from mintmed.spec import estimate_plan
+from mintmed.spec import TermKind, estimate_plan
 from mintmed.types import AnalysisStatus, PointAnalysis
 
 
@@ -84,6 +84,14 @@ def test_bootstrap_refits_exact_system_and_repeats_scientific_records():
 def test_bootstrap_recomputes_admissible_parallel_contributions():
     fixture = sample_fixture("parallel_correlated", 100, np.random.default_rng(20261010))
     outcome = replace(fixture.spec.nodes[-1], interactions=())
+    # A quadratic M1 term keeps the additive system on the Sobol path.
+    outcome = replace(
+        outcome,
+        terms=tuple(
+            replace(term, kind=TermKind.QUADRATIC) if term.variable == "M1" else term
+            for term in outcome.terms
+        ),
+    )
     spec = replace(
         fixture.spec,
         nodes=(*fixture.spec.nodes[:-1], outcome),
