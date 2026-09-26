@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -188,10 +189,21 @@ class ContrastSpec:
     moderator_values: Mapping[str, Any] = field(default_factory=dict)
     primary_effects: tuple[str, ...] = ("TE", "PNDE", "TNIE")
     interpretation: str = "model_standardized"
+    moderator_evaluation: Mapping[str, tuple[Any, ...]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "moderator_values", _freeze_mapping(self.moderator_values))
         object.__setattr__(self, "primary_effects", tuple(self.primary_effects))
+        object.__setattr__(
+            self,
+            "moderator_evaluation",
+            _freeze_mapping(
+                {
+                    name: values if isinstance(values, (str, bytes)) else tuple(values)
+                    for name, values in dict(self.moderator_evaluation).items()
+                }
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,7 +253,11 @@ class ModelSpec:
     def to_canonical_dict(self) -> dict[str, Any]:
         """Serialize without paths in a stable, JSON-compatible structure."""
 
-        return _canonicalize(asdict(self))
+        canonical = _canonicalize(asdict(self))
+        # Specifications without evaluation values keep their pre-existing hash.
+        if not canonical["contrast"].get("moderator_evaluation"):
+            canonical["contrast"].pop("moderator_evaluation", None)
+        return canonical
 
     def canonical_json(self) -> str:
         """Return canonical sorted JSON suitable as input to a specification hash."""
@@ -944,7 +960,11 @@ def _parse_contrast(
 ) -> ContrastSpec:
     path = "contrast"
     mapping = {} if value is None else _mapping(value, path, "contrast")
-    _keys(mapping, {"reference", "comparison", "moderator_values", "primary_effects", "interpretation"}, path)
+    _keys(
+        mapping,
+        {"reference", "comparison", "moderator_values", "moderator_evaluation", "primary_effects", "interpretation"},
+        path,
+    )
     reference = mapping.get("reference", exposure_reference)
     comparison = mapping.get("comparison", exposure_comparison)
     if reference == comparison:
@@ -974,7 +994,23 @@ def _parse_contrast(
     interpretation = _string(mapping.get("interpretation", default_interpretation), f"{path}.interpretation")
     if interpretation not in _INTERPRETATIONS:
         _fail("invalid_interpretation", f"{path}.interpretation", f"unsupported mode {interpretation!r}")
-    return ContrastSpec(reference, comparison, moderator_mapping, primary_effects, interpretation)
+    evaluation_mapping = _mapping(
+        mapping.get("moderator_evaluation", {}), f"{path}.moderator_evaluation", "moderator evaluation values"
+    )
+    evaluation = {
+        name: tuple(_sequence(values, f"{path}.moderator_evaluation.{name}"))
+        for name, values in evaluation_mapping.items()
+    }
+    contrast = ContrastSpec(
+        reference,
+        comparison,
+        moderator_mapping,
+        primary_effects,
+        interpretation,
+        moderator_evaluation=evaluation,
+    )
+    _validate_moderator_evaluation(contrast, moderators)
+    return contrast
 
 
 def _parse_computation(value: Any) -> ComputationSpec:
@@ -1237,10 +1273,44 @@ def _validate_contrast(contrast: ContrastSpec, exposure: VariableSpec, moderator
             _fail("unknown_moderator", f"contrast.moderator_values.{name}", "moderator is not declared")
         if known[name].levels and value not in known[name].levels:
             _fail("invalid_moderator_value", f"contrast.moderator_values.{name}", "value is not a declared level")
+    _validate_moderator_evaluation(contrast, moderators)
     if set(contrast.primary_effects) - _PRIMARY_EFFECTS:
         _fail("malformed_contrast", "contrast.primary_effects", "unknown primary effect name")
     if contrast.interpretation not in _INTERPRETATIONS:
         _fail("invalid_interpretation", "contrast.interpretation", "unsupported interpretation mode")
+
+
+def _validate_moderator_evaluation(contrast: ContrastSpec, moderators: Sequence[VariableSpec]) -> None:
+    """Validate the declared moderator values that contrasts are evaluated at."""
+
+    known = {moderator.name: moderator for moderator in moderators}
+    for name, values in contrast.moderator_evaluation.items():
+        path = f"contrast.moderator_evaluation.{name}"
+        if name not in known:
+            _fail("unknown_moderator", path, "moderator is not declared")
+        if name not in contrast.moderator_values:
+            _fail(
+                "missing_moderator_baseline",
+                path,
+                "evaluated moderators need a baseline value in contrast.moderator_values",
+            )
+        if isinstance(values, (str, bytes)) or not isinstance(values, Sequence) or not values:
+            _fail("invalid_moderator_evaluation", path, "declare a non-empty list of evaluation values")
+        try:
+            unique = len(set(values)) == len(values)
+        except TypeError:
+            unique = False
+        if not unique:
+            _fail("invalid_moderator_evaluation", path, "evaluation values must be unique scalars")
+        moderator = known[name]
+        for value in values:
+            if moderator.levels:
+                if value not in moderator.levels:
+                    _fail("invalid_moderator_value", path, "value is not a declared level")
+                continue
+            numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+            if not numeric or not math.isfinite(float(value)):
+                _fail("invalid_moderator_evaluation", path, "continuous moderator values must be finite numbers")
 
 
 def _validate_computation(computation: ComputationSpec) -> None:

@@ -147,11 +147,18 @@ def _declared_moderator_requests(
     spec: ModelSpec,
     plan: AnalysisPlan,
 ) -> Mapping[str, Sequence[object]]:
-    """Return only explicitly declared moderator levels."""
+    """Return declared evaluation values, else declared categorical levels.
 
+    ``contrast.moderator_evaluation`` takes precedence; a continuous moderator
+    without evaluation values is not contrasted.
+    """
+
+    evaluation = spec.contrast.moderator_evaluation
     requests: dict[str, tuple[object, ...]] = {}
     for moderator in spec.moderators:
-        if moderator.levels:
+        if moderator.name in evaluation:
+            requests[moderator.name] = tuple(evaluation[moderator.name])
+        elif moderator.levels:
             requests[moderator.name] = tuple(moderator.levels)
     return requests
 

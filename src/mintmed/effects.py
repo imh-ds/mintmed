@@ -590,6 +590,17 @@ def _regime_means_at_moderators(
     )
 
 
+STRUCTURAL_ZERO_RTOL = 1e-12
+"""Relative size below which a moderator difference is treated as exactly zero.
+
+Differences this small arise only from floating-point cancellation when the
+moderator does not enter the paths of that effect; no estimable difference is
+that small relative to the effects themselves.
+"""
+
+NO_INTERVAL_DIFFERENCE_REASONS = frozenset({"baseline_reference", "structurally_zero"})
+
+
 def _effect_difference(
     current: EffectEstimate,
     baseline: EffectEstimate,
@@ -602,6 +613,12 @@ def _effect_difference(
     status = current.status if current.status is not AnalysisStatus.OK else baseline.status
     reason = current.reason or baseline.reason
     estimate = float(current.estimate - baseline.estimate)
+    if status is AnalysisStatus.OK:
+        scale = max(1.0, abs(float(current.estimate)), abs(float(baseline.estimate)))
+        if value == baseline_value:
+            estimate, reason = 0.0, "baseline_reference"
+        elif abs(estimate) <= STRUCTURAL_ZERO_RTOL * scale:
+            estimate, reason = 0.0, "structurally_zero"
     metadata = dict(current.metadata)
     metadata.update(
         {

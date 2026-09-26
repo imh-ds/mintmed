@@ -12,7 +12,12 @@ import numpy as np
 import pandas as pd
 
 from .diagnostics import NodeFitError
-from .effects import moderator_contrasts, natural_effects, parallel_contributions
+from .effects import (
+    NO_INTERVAL_DIFFERENCE_REASONS,
+    moderator_contrasts,
+    natural_effects,
+    parallel_contributions,
+)
 from .gformula import (
     CommonDraws,
     GFormulaError,
@@ -386,6 +391,8 @@ def _point_candidates(point: PointAnalysis) -> dict[str, EffectEstimate]:
             value = getattr(contrast, "value")
             differences = getattr(contrast, "differences")
         for difference in differences:
+            if difference.reason in NO_INTERVAL_DIFFERENCE_REASONS:
+                continue
             key = _canonical_moderator_key(moderator, value, difference.name)
             candidates[key] = difference
     return candidates
