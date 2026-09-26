@@ -519,6 +519,63 @@ Each task entry should record:
 - **Files:** `src/mintmed/report.py`; `tests/mediation/test_report.py`; `tests/mediation/test_analysis.py`; this decision log.
 - **Verification:** Full suite `421 passed` at `23a68b5`.
 
+#### Tasks 03/09/11 correction — moderator evaluation values, baseline and structural-zero differences (audit BUG-11)
+
+- **Date:** 2026-09-25
+- **Task:** Task 3 (specification), Task 9 (moderator contrasts) and Task 11 (API); correction from the Tasks 1–14 audit (BUG-11).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  1. **Evaluation values.** A new optional schema key, `contrast.moderator_evaluation: {W: [values…]}`, stored as `ContrastSpec.moderator_evaluation`, declares the values each moderator is contrasted at. `contrast.moderator_values` remains the baseline.
+     - The key is validated identically on the YAML and template paths: the moderator must be declared, a baseline must exist (`missing_moderator_baseline`), and values must be non-empty and unique. They must be declared levels for categorical moderators (`invalid_moderator_value`) and finite numbers for continuous ones (`invalid_moderator_evaluation`). Support against the retained data is still checked at run time (`unsupported_extrapolation`).
+     - Declared values take precedence over categorical levels, so a continuous moderator can now be contrasted, for example at mean ± 1 SD. A continuous moderator without declared values is still not contrasted.
+     - An empty declaration is dropped from the canonical form, so existing specification hashes are unchanged.
+  2. **Baseline self-contrast.** The contrast of the baseline value with itself is still reported, because its effects are the baseline effects. Its differences are `0.0` with reason `baseline_reference`, and they are not bootstrap interval candidates.
+  3. **Structural zeros.** A difference whose magnitude is at most `STRUCTURAL_ZERO_RTOL = 1e-12` × max(1, |effect at value|, |effect at baseline|) is set to `0.0` with reason `structurally_zero`, and it is not an interval candidate. Design-based detection was not adopted: the numeric rule covers every path, with no false positives at realistic effect scales.
+- **Rationale:** The methodology calls for effects "at a few prespecified baseline moderator values", which a continuous moderator could not have. The example output reported an "ok" `[0, 0]` interval for the self-contrast. It also reported a PNDE difference of `−8.3e-17` with an interval that excluded zero, which a reader, or the `zero_exclusion` logic, would take as evidence.
+- **Actions:** Red contracts in `2c4a92a`. Implementation in `2d4594e`.
+- **Evidence:**
+  - YAML/template parity tests cover the new key.
+  - A canonical-form test confirms hashes are unchanged when the key is absent.
+  - On the moderated fixture, the W=0 differences carry `baseline_reference` with no interval, the W=1 PNDE difference is exactly 0.0 (`structurally_zero`, no interval), and the W=1 TNIE difference keeps its interval.
+  - A continuous W contrasted at `(0.0, 1.0)` evaluates correctly.
+  - A CLI re-run of `examples/serial_moderated` shows the new reasons in place of the float-noise interval.
+- **Files:** `src/mintmed/spec.py`; `src/mintmed/api.py`; `src/mintmed/effects.py`; `src/mintmed/uncertainty.py`; `tests/mediation/test_spec.py`; `tests/mediation/test_analysis.py`; this decision log.
+- **Verification:** Full suite `433 passed` at `2d4594e`.
+
+#### Task 10 correction — optional outputs never fail a bootstrap replicate (audit BUG-12)
+
+- **Date:** 2026-09-25
+- **Task:** Task 10 (bootstrap); correction from the Tasks 1–14 audit (BUG-12).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `_run_replicate` wraps `moderator_contrasts` in a `GFormulaError` guard. On failure, the replicate stays `ok` and records `moderator_available=False` with `moderator_reason_code` and `moderator_reason`; on success it records `moderator_available=True`. These three columns are added to `bootstrap.csv`.
+  - Following the Task 10 plan table ("Primary may remain; contribution withheld"), an optional candidate that is unavailable in any successful replicate now has its interval withheld, with reason `optional_output_unavailable`. This applies to both contributions and moderator differences. Previously a percentile was taken over the remaining subset, which would be conditional on the replicates where the output happened to be estimable. The overall bootstrap status is `WARNING` in that case, as before.
+- **Rationale:** A resample that lacked the baseline moderator level or its support raised `unsupported_extrapolation` out of the replicate. That turned a successful primary refit into a failed replicate, counted toward the failure threshold, and could withhold the TE/PNDE/TNIE intervals. The plan requires optional outputs to be withheld independently.
+- **Actions:** Red contracts in `3205b47`. Implementation in `09b75d2`.
+- **Evidence:** When the moderator block always fails, both replicates stay `ok`, primary intervals are available, and moderator intervals are withheld with `optional_output_unavailable`. When it fails in the first of three replicates, the availability flags read `[False, True, True]`, primary intervals remain, and the moderator interval is withheld.
+- **Files:** `src/mintmed/uncertainty.py`; `src/mintmed/report.py`; `tests/mediation/test_uncertainty.py`; this decision log.
+- **Verification:** Full suite green at `09b75d2`: 434 passed, with the slow statsmodels reference test deselected for that interim run; it passed in the next full run.
+- **Follow-up:** Withholding the whole interval when one replicate lacks the output is conservative. For a large B, a small tolerated rate, mirroring the 1% primary rule, could be considered in a plan amendment.
+
+#### Task 13 correction — reject mixed-configuration rows in aggregation and reporting (audit BUG-13)
+
+- **Date:** 2026-09-25
+- **Task:** Task 13 (validation evidence); correction from the Tasks 1–14 audit (BUG-13).
+- **Status:** Completed.
+- **Schedule:** Correction applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `scripts/aggregate_shards.aggregate` rejects every shard whose rows carry a `config_hash` other than the config's. It names each offending shard before anything is written. The check applies when the runner's config exposes `config_hash`, so the generic runner contract is unchanged.
+  - `write_report` rejects raw rows whose `config_hash` differs from the config. It also rejects rows whose `provenance_json` `config_hash`, `bootstrap_requested` or `bootstrap_mode` contradict the config.
+- **Rationale:** Only the resume path filtered by hash. A smoke shard, or one produced with different bootstrap counts or gates, would be aggregated, summarized and gated as frozen evidence whenever its keys filled the grid. The Task 13 follow-up listed "mixed-design aggregation rejection" as something to inspect, but no code performed it.
+- **Actions:** Red contracts in `0fd3076`. Implementation in `6c8a306`.
+- **Evidence:**
+  - An aggregation test with a `smoke`-hashed shard raises and names it, and no output is written.
+  - `write_report` tests with a foreign row hash, and with contradictory provenance values for each of the three keys, raise before any artifact is written.
+- **Files:** `scripts/aggregate_shards.py`; `src/mintmed/experiments/mediation_validation_reporting.py`; `tests/integration/test_evidence_aggregation.py`; `tests/integration/test_mediation_validation.py`; this decision log.
+- **Verification:** Full suite `440 passed` at `6c8a306`.
+
 ## Reusable entry template
 
 ### Task NN — Name
