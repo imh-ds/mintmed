@@ -479,3 +479,63 @@ def test_frozen_category_check_scales_with_distinct_values(monkeypatch) -> None:
         design_module._check_frozen_categories(design, unseen)
     assert error.value.code == "unseen_category"
     assert error.value.variable == "condition"
+
+
+def _categorical_example_design():
+    from pathlib import Path
+
+    from mintmed.gformula import fit_system
+    from mintmed.spec import estimate_plan, load_model_spec
+
+    root = Path(__file__).parents[2]
+    data = pd.read_csv(root / "examples" / "single" / "data.csv")
+    spec = load_model_spec(root / "examples" / "single" / "analysis.yaml")
+    plan = estimate_plan(data, spec)
+    fitted = fit_system(data, plan)
+    outcome = fitted.outcome_node.design
+    assert any(term.kind.value == "categorical" for term in outcome.term_metadata)
+    return data, outcome
+
+
+def test_categorical_transform_matches_patsy_on_large_frames():
+    import patsy
+
+    data, outcome = _categorical_example_design()
+    large = pd.concat([data] * 40, ignore_index=True)
+    large["A"] = large["A"].astype(float)
+
+    transformed = design_module.transform_design(outcome, large)
+    expected = patsy.build_design_matrices(
+        [outcome.design_info], large, return_type="dataframe", NA_action="raise"
+    )[0]
+
+    pd.testing.assert_frame_equal(transformed.reset_index(drop=True), expected.reset_index(drop=True))
+
+
+def test_categorical_transform_does_not_check_each_value(monkeypatch):
+    import patsy.missing
+
+    data, outcome = _categorical_example_design()
+    large = pd.concat([data] * 40, ignore_index=True)
+    calls = {"count": 0}
+    original = patsy.missing.NAAction.is_categorical_NA
+
+    def counting(self, value):
+        calls["count"] += 1
+        return original(self, value)
+
+    monkeypatch.setattr(patsy.missing.NAAction, "is_categorical_NA", counting)
+    design_module.transform_design(outcome, large)
+
+    assert calls["count"] < len(data)
+
+
+def test_categorical_transform_still_rejects_unseen_levels():
+    data, outcome = _categorical_example_design()
+    frame = data.copy()
+    frame.loc[0, "A"] = 7
+
+    with pytest.raises(Exception) as caught:
+        design_module.transform_design(outcome, frame)
+
+    assert getattr(caught.value, "code", None) == "unseen_category"
