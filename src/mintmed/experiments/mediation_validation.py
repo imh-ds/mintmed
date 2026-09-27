@@ -91,13 +91,21 @@ _CONFIG_KEYS = {
     "gates",
 }
 _STRESS_KEYS = {"enabled", "replicates", "sample_size", "fixture_names"}
-_GATE_KEYS = {
+_COMMON_GATE_KEYS = {
     "continuous_abs_bias_sd",
     "binary_abs_bias_probability",
-    "coverage_wilson_lower",
     "null_false_zero_wilson_upper",
     "unavailable_or_fatal_max",
 }
+# Exactly one coverage rule is declared per configuration. The run-1 matrix
+# froze the Wilson-lower rule; later plans use a Bonferroni-adjusted exact
+# binomial test against nominal coverage.
+COVERAGE_RULES: dict[str, frozenset[str]] = {
+    "wilson_lower": frozenset({"coverage_wilson_lower"}),
+    "exact_binomial_bonferroni": frozenset({"coverage_family_alpha", "coverage_nominal"}),
+}
+_GATE_KEYS = _COMMON_GATE_KEYS.union(*COVERAGE_RULES.values())
+_OPEN_UNIT_GATE_KEYS = ("coverage_family_alpha", "coverage_nominal")
 _DRAW_BUDGETS = {256, 512, 1024, 2048, 4096}
 _BOOTSTRAP_MODES = {"standard", "quick_diagnostic"}
 _STRESS_FIXTURES = {"tied_score", "sparse_events", "missingness", "opposing_paths"}
@@ -196,6 +204,16 @@ def _required_float(raw: Mapping[str, Any], key: str, *, minimum: float) -> floa
     return result
 
 
+def coverage_rule(gates: Mapping[str, Any]) -> str:
+    """Return the name of the single coverage rule declared in ``gates``."""
+
+    declared = [name for name, keys in COVERAGE_RULES.items() if keys & set(gates)]
+    if len(declared) != 1 or not COVERAGE_RULES[declared[0]] <= set(gates):
+        options = "; ".join(f"{name}: {', '.join(sorted(keys))}" for name, keys in COVERAGE_RULES.items())
+        raise ValueError(f"gates must declare exactly one complete coverage rule ({options})")
+    return declared[0]
+
+
 def load_config(path: Path) -> ValidationConfig:
     """Load and strictly validate one frozen validation design."""
 
@@ -263,16 +281,20 @@ def load_config(path: Path) -> ValidationConfig:
     gate_unknown = set(gates) - _GATE_KEYS
     if gate_unknown:
         raise ValueError(f"unknown gate key(s): {', '.join(sorted(gate_unknown))}")
-    if set(gates) != _GATE_KEYS:
+    if not _COMMON_GATE_KEYS <= set(gates):
         raise ValueError("gates must declare every frozen gate")
+    coverage_rule(gates)
     gate_values = tuple(
         (key, _required_float(gates, key, minimum=0.0))
-        for key in sorted(_GATE_KEYS)
+        for key in sorted(gates)
     )
     gate_map = dict(gate_values)
     for key in ("coverage_wilson_lower", "null_false_zero_wilson_upper", "unavailable_or_fatal_max"):
-        if gate_map[key] > 1.0:
+        if key in gate_map and gate_map[key] > 1.0:
             raise ValueError(f"{key} must be between 0 and 1")
+    for key in _OPEN_UNIT_GATE_KEYS:
+        if key in gate_map and not 0.0 < gate_map[key] < 1.0:
+            raise ValueError(f"{key} must be strictly between 0 and 1")
     return ValidationConfig(
         schema_version=schema_version,
         experiment=experiment,

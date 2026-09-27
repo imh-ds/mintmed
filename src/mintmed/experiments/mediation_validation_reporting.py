@@ -16,12 +16,14 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.stats import binom
 
 from .mediation_validation import (
     COMBINATION_COLUMNS,
     RAW_COLUMNS,
     ValidationConfig,
     cell_definition,
+    coverage_rule,
     expected_combinations,
 )
 
@@ -161,6 +163,9 @@ def summarize_metrics(
         zero_lower, zero_upper = wilson(zero_successes, attempted)
         finite_biases = biases.dropna()
         mean_bias = None if finite_biases.empty else float(finite_biases.mean())
+        truths = pd.to_numeric(group["truth"], errors="coerce")
+        lowers = pd.to_numeric(group["lower"], errors="coerce")
+        uppers = pd.to_numeric(group["upper"], errors="coerce")
         records.append(
             {
                 "cell_id": str(cell_id),
@@ -195,6 +200,9 @@ def summarize_metrics(
                 "draw_budget_max": None if draw_values.empty else float(draw_values.max()),
                 "population_outcome_sd": definition.population_outcome_sd,
                 **_wilson_fields(coverage_successes, attempted, "coverage"),
+                # Descriptive: on which side available intervals missed the truth.
+                "truth_above_interval_rows": int((available & (truths > uppers)).sum()),
+                "truth_below_interval_rows": int((available & (truths < lowers)).sum()),
                 "available_only_coverage": None if available_trials == 0 else float(available_successes / available_trials),
                 "available_only_coverage_wilson_lower": available_lower,
                 "available_only_coverage_wilson_upper": available_upper,
@@ -249,6 +257,59 @@ def _bias_gate(values: list[tuple[float, float | None]], threshold: float) -> di
     }
 
 
+def coverage_critical_count(trials: int, gated_effects: int, nominal: float, family_alpha: float) -> int:
+    """Return the largest covered count that fails the exact binomial rule.
+
+    An effect fails when ``BinomialCDF(covered; trials, nominal) <=
+    family_alpha / gated_effects``. Returns -1 when no count can fail.
+    """
+
+    if trials < 1 or gated_effects < 1:
+        raise ValueError("trials and gated_effects must be positive")
+    per_effect_alpha = family_alpha / gated_effects
+    counts = np.arange(trials + 1)
+    failing = counts[binom.cdf(counts, trials, nominal) <= per_effect_alpha]
+    return int(failing.max()) if failing.size else -1
+
+
+def _exact_binomial_coverage_gate(eligible: pd.DataFrame, gates: Mapping[str, float]) -> dict[str, Any]:
+    """Bonferroni-adjusted one-sided exact binomial test of each effect's coverage."""
+
+    nominal = float(gates["coverage_nominal"])
+    family_alpha = float(gates["coverage_family_alpha"])
+    rows = eligible.loc[pd.to_numeric(eligible["coverage_trials"], errors="coerce") > 0]
+    gated_effects = len(rows)
+    per_effect_alpha = family_alpha / gated_effects if gated_effects else None
+    effects = []
+    for row in rows.itertuples():
+        covered, trials = int(row.coverage_successes), int(row.coverage_trials)
+        p_value = float(binom.cdf(covered, trials, nominal))
+        effects.append(
+            {
+                "cell_id": row.cell_id,
+                "metric": row.metric,
+                "covered": covered,
+                "trials": trials,
+                "p_value": p_value,
+                "critical_count": coverage_critical_count(trials, gated_effects, nominal, family_alpha),
+                "truth_above_interval_rows": int(row.truth_above_interval_rows),
+                "truth_below_interval_rows": int(row.truth_below_interval_rows),
+                "passed": p_value > per_effect_alpha,
+            }
+        )
+    return {
+        "rule": "exact_binomial_bonferroni",
+        "threshold": per_effect_alpha,
+        "observed": min((effect["p_value"] for effect in effects), default=None),
+        "nominal": nominal,
+        "family_alpha": family_alpha,
+        "gated_effects": gated_effects,
+        "failing_effects": [f"{effect['cell_id']}:{effect['metric']}" for effect in effects if not effect["passed"]],
+        "effects": effects,
+        "passed": bool(effects) and all(effect["passed"] for effect in effects),
+    }
+
+
 def evaluate_gates(
     summary: pd.DataFrame,
     raw: pd.DataFrame,
@@ -277,9 +338,20 @@ def evaluate_gates(
         for row in binary.itertuples()
         if _present(row.absolute_bias)
     ]
-    coverage_values = [
-        float(value) for value in eligible["coverage_wilson_lower"].dropna().tolist()
-    ]
+    if coverage_rule(gates) == "wilson_lower":
+        coverage_values = [
+            float(value) for value in eligible["coverage_wilson_lower"].dropna().tolist()
+        ]
+        coverage_gate = (
+            "coverage_wilson_lower",
+            {
+                "threshold": gates["coverage_wilson_lower"],
+                "observed": min(coverage_values, default=None),
+                "passed": bool(coverage_values) and min(coverage_values) >= gates["coverage_wilson_lower"],
+            },
+        )
+    else:
+        coverage_gate = ("coverage_exact_binomial_bonferroni", _exact_binomial_coverage_gate(eligible, gates))
     null_rows = eligible.loc[eligible["metric"].isin({"TNIE"}) & (eligible["outcome_kind"] == "continuous")]
     null_rows = null_rows.loc[null_rows["cell_id"].isin({"cell03_no_a_to_m_n100", "cell04_no_m_to_y_n100", "cell05_no_mediation_n100"})]
     null_upper = [float(value) for value in null_rows["zero_exclusion_wilson_upper"].dropna().tolist()]
@@ -288,11 +360,7 @@ def evaluate_gates(
     results = {
         "continuous_abs_bias_sd": _bias_gate(continuous_bias, gates["continuous_abs_bias_sd"]),
         "binary_abs_bias_probability": _bias_gate(binary_bias, gates["binary_abs_bias_probability"]),
-        "coverage_wilson_lower": {
-            "threshold": gates["coverage_wilson_lower"],
-            "observed": min(coverage_values, default=None),
-            "passed": bool(coverage_values) and min(coverage_values) >= gates["coverage_wilson_lower"],
-        },
+        coverage_gate[0]: coverage_gate[1],
         "null_false_zero_wilson_upper": {
             "threshold": gates["null_false_zero_wilson_upper"],
             "observed": max(null_upper, default=None),
@@ -372,6 +440,27 @@ def _report_markdown(
         lines.append(
             f"| {name} | {result['observed']} | {'' if mc_se is None else mc_se} | {result['threshold']} | {result['passed']} |"
         )
+    exact = gate_result["gates"].get("coverage_exact_binomial_bonferroni")
+    if exact is not None:
+        lines.extend(
+            [
+                "",
+                "### Coverage: exact binomial with Bonferroni adjustment",
+                "",
+                f"Each of the {exact['gated_effects']} gated effects fails when the one-sided exact binomial p-value against "
+                f"{exact['nominal']} coverage is at most {exact['family_alpha']} / {exact['gated_effects']}. "
+                "Missing intervals count as misses. Miss sides are descriptive.",
+                "",
+                "| Cell | Metric | Covered | Trials | Critical count | p-value | Truth above / below | Passed |",
+                "|---|---|---:|---:|---:|---:|---|:---:|",
+            ]
+        )
+        for effect in exact["effects"]:
+            lines.append(
+                f"| {effect['cell_id']} | {effect['metric']} | {effect['covered']} | {effect['trials']} | "
+                f"{effect['critical_count']} | {effect['p_value']:.4g} | "
+                f"{effect['truth_above_interval_rows']} / {effect['truth_below_interval_rows']} | {effect['passed']} |"
+            )
     lines.extend(
         [
             "",
@@ -496,6 +585,7 @@ def write_report(raw: pd.DataFrame, config: ValidationConfig, output_dir: Path) 
 
 __all__ = [
     "WILSON_Z",
+    "coverage_critical_count",
     "evaluate_gates",
     "expand_metrics",
     "summarize_metrics",
