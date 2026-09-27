@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import ctypes
+import hashlib
 import importlib.metadata
 import json
 import math
@@ -44,9 +46,13 @@ SUPPORTED_PYTHON = ">=3.11,<3.12"
 DEFAULT_CONFIG = ROOT / "configs" / "mediation_validation.yaml"
 DEFAULT_OUTPUT = ROOT / "results" / "generated" / "runtime-pilot.json"
 DEFAULT_MARKDOWN = ROOT / "docs" / "validation" / "runtime_pilot.md"
+DEFAULT_FORECAST_OUTPUT = ROOT / "results" / "generated" / "runtime-forecast.json"
+FORECAST_EXPERIMENT = "mintmed_runtime_forecast"
 # Every locked matrix cell is measured directly.  The earlier five-case proxy
 # design forecast the Sobol-path cells (06, 10) from exact/quadrature proxies
 # and understated their cost by more than an order of magnitude (audit BUG-03).
+# This tuple is the run-1 default matrix; the pilot itself derives its cells
+# from the loaded configuration's ``cell_ids``.
 PILOT_CELL_IDS: tuple[str, ...] = (
     "cell01_linear_n100",
     "cell02_linear_n250",
@@ -61,7 +67,8 @@ PILOT_CELL_IDS: tuple[str, ...] = (
     "cell11_binary_mediator_n150",
     "cell12_mixed_binary_serial_n250",
 )
-MATRIX_CELL_COUNT = 12
+# Matrix-shape defaults (run 1). ``--datasets-per-cell`` and
+# ``--replicate-blocks`` override them; the cell count is the config's.
 MATRIX_DATASETS_PER_CELL = 200
 BOOTSTRAP_REPLICATES = 399
 INTEGRATION_DRAWS = 256
@@ -72,7 +79,7 @@ RERUN_FRACTION = 0.05
 # compute; the shard gate guards wall-clock feasibility of the sharded matrix
 # (12 cells x SHARD_REPLICATE_BLOCKS replicate blocks) under GitHub's 6-hour
 # job limit. The original ceiling was 12 aggregate CPU-hours on unspecified
-# hardware.
+# hardware. The ceilings stay fixed; the shard layout is a parameter.
 REFERENCE_PLATFORM = "github-actions ubuntu-latest"
 CPU_CEILING_HOURS = 36.0
 SHARD_REPLICATE_BLOCKS = 4
@@ -424,9 +431,13 @@ def _run_case(config_path: Path, cell_id: str, repeat: int, *, allow_unsupported
         return record
 
 
-def _summarize_cases(measurements: Sequence[PilotMeasurement], records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _summarize_cases(
+    measurements: Sequence[PilotMeasurement],
+    records: Sequence[Mapping[str, Any]],
+    cell_ids: Sequence[str] = PILOT_CELL_IDS,
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
-    for cell_id in PILOT_CELL_IDS:
+    for cell_id in cell_ids:
         cell_measurements = [item for item in measurements if item.cell_id == cell_id]
         cell_records = [record for record in records if record.get("measurement", {}).get("cell_id") == cell_id]
         cpu_values = [item.cpu_seconds for item in cell_measurements]
@@ -479,16 +490,101 @@ def _summarize_cases(measurements: Sequence[PilotMeasurement], records: Sequence
     return output
 
 
+def _validate_forecast_settings(
+    cell_ids: Sequence[str],
+    *,
+    datasets_per_cell: int,
+    replicate_blocks: int,
+    rerun_fraction: float,
+    ceiling_hours: float,
+) -> None:
+    if datasets_per_cell <= 0 or rerun_fraction < 0.0 or ceiling_hours <= 0.0:
+        raise ValueError("forecast settings must be positive and rerun_fraction nonnegative")
+    if replicate_blocks <= 0 or replicate_blocks > datasets_per_cell:
+        raise ValueError("replicate_blocks must be positive and at most datasets_per_cell")
+    if not cell_ids or len(set(cell_ids)) != len(cell_ids):
+        raise ValueError("cell_ids must be nonempty and unique")
+
+
+def _matrix_fit_counts(cell_count: int, datasets_per_cell: int) -> dict[str, int]:
+    return {
+        "matrix_point_fits": cell_count * datasets_per_cell,
+        "matrix_bootstrap_refits": cell_count * datasets_per_cell * BOOTSTRAP_REPLICATES,
+        "matrix_complete_analyses": cell_count * datasets_per_cell * (BOOTSTRAP_REPLICATES + 1),
+    }
+
+
+def _budget_forecast(
+    cell_ids: Sequence[str],
+    cpu_seconds_per_dataset: Mapping[str, float],
+    wall_seconds_per_dataset: Mapping[str, float],
+    *,
+    datasets_per_cell: int,
+    replicate_blocks: int,
+    rerun_fraction: float,
+    ceiling_hours: float,
+) -> dict[str, Any]:
+    """Apply both budget gates to per-cell, per-dataset CPU and wall seconds."""
+
+    base_cpu_seconds = sum(cpu_seconds_per_dataset[cell_id] * datasets_per_cell for cell_id in cell_ids)
+    projected_cpu_seconds = base_cpu_seconds * (1.0 + rerun_fraction)
+    projected_cpu_hours = projected_cpu_seconds / 3600.0
+    # Each shard runs one cell's replicate block sequentially in one process,
+    # so its wall time is the cell's per-dataset wall time times the block size.
+    datasets_per_shard = math.ceil(datasets_per_cell / replicate_blocks)
+    shard_wall_hours = {
+        cell_id: wall_seconds_per_dataset[cell_id] * datasets_per_shard * (1.0 + rerun_fraction) / 3600.0
+        for cell_id in cell_ids
+    }
+    slowest_shard_cell = max(shard_wall_hours, key=shard_wall_hours.__getitem__)
+    max_shard_wall_hours = shard_wall_hours[slowest_shard_cell]
+    aggregate_pass = projected_cpu_hours <= ceiling_hours
+    shard_pass = max_shard_wall_hours <= SHARD_WALL_CEILING_HOURS
+    budget_pass = aggregate_pass and shard_pass
+    return {
+        "status": "pass" if budget_pass else "over_budget",
+        "budget_pass": budget_pass,
+        "aggregate_pass": aggregate_pass,
+        "shard_pass": shard_pass,
+        "reference_platform": REFERENCE_PLATFORM,
+        "cell_count": len(cell_ids),
+        "shard_replicate_blocks": replicate_blocks,
+        "shard_count": len(cell_ids) * replicate_blocks,
+        "datasets_per_shard": datasets_per_shard,
+        "shard_wall_hours_by_cell": shard_wall_hours,
+        "slowest_shard_cell": slowest_shard_cell,
+        "max_shard_wall_hours": max_shard_wall_hours,
+        "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
+        **_matrix_fit_counts(len(cell_ids), datasets_per_cell),
+        "datasets_per_cell": datasets_per_cell,
+        "base_cpu_seconds": base_cpu_seconds,
+        "base_cpu_hours": base_cpu_seconds / 3600.0,
+        "rerun_fraction": rerun_fraction,
+        "projected_cpu_seconds": projected_cpu_seconds,
+        "projected_cpu_hours": projected_cpu_hours,
+        "ceiling_cpu_hours": ceiling_hours,
+    }
+
+
 def forecast_cpu_hours(
     measurements: Sequence[PilotMeasurement],
     *,
+    cell_ids: Sequence[str] = PILOT_CELL_IDS,
     datasets_per_cell: int = MATRIX_DATASETS_PER_CELL,
+    replicate_blocks: int = SHARD_REPLICATE_BLOCKS,
     rerun_fraction: float = RERUN_FRACTION,
     ceiling_hours: float = CPU_CEILING_HOURS,
 ) -> dict[str, Any]:
-    if datasets_per_cell <= 0 or rerun_fraction < 0.0 or ceiling_hours <= 0.0:
-        raise ValueError("forecast settings must be positive and rerun_fraction nonnegative")
-    by_cell: dict[str, list[PilotMeasurement]] = {cell_id: [] for cell_id in PILOT_CELL_IDS}
+    cell_ids = tuple(cell_ids)
+    _validate_forecast_settings(
+        cell_ids,
+        datasets_per_cell=datasets_per_cell,
+        replicate_blocks=replicate_blocks,
+        rerun_fraction=rerun_fraction,
+        ceiling_hours=ceiling_hours,
+    )
+    proxy_map = {cell_id: [cell_id] for cell_id in cell_ids}
+    by_cell: dict[str, list[PilotMeasurement]] = {cell_id: [] for cell_id in cell_ids}
     for measurement in measurements:
         if measurement.cell_id not in by_cell:
             raise ValueError(f"measurement cell is not in the pilot: {measurement.cell_id}")
@@ -502,12 +598,10 @@ def forecast_cpu_hours(
             "reason": "incomplete_pilot_case",
             "missing_pilot_cells": missing,
             "incomplete_pilot_cells": incomplete,
-            "matrix_point_fits": MATRIX_CELL_COUNT * datasets_per_cell,
-            "matrix_bootstrap_refits": MATRIX_CELL_COUNT * datasets_per_cell * BOOTSTRAP_REPLICATES,
-            "matrix_complete_analyses": MATRIX_CELL_COUNT * datasets_per_cell * (BOOTSTRAP_REPLICATES + 1),
+            **_matrix_fit_counts(len(cell_ids), datasets_per_cell),
             "rerun_fraction": rerun_fraction,
             "ceiling_cpu_hours": ceiling_hours,
-            "proxy_map": {proxy: list(cells) for proxy, cells in PROXY_MAP.items()},
+            "proxy_map": proxy_map,
         }
 
     median_cpu = {
@@ -518,52 +612,196 @@ def forecast_cpu_hours(
         cell_id: sorted({item.integration_method for item in values})
         for cell_id, values in by_cell.items()
     }
-    proxy_cpu_seconds = {proxy: median_cpu[proxy] for proxy in PILOT_CELL_IDS}
-    base_cpu_seconds = sum(proxy_cpu_seconds[proxy] * len(cells) * datasets_per_cell for proxy, cells in PROXY_MAP.items())
-    projected_cpu_seconds = base_cpu_seconds * (1.0 + rerun_fraction)
-    projected_cpu_hours = projected_cpu_seconds / 3600.0
-    # Each shard runs one cell's replicate block sequentially in one process,
-    # so its wall time is the cell's per-dataset wall time times the block size.
-    datasets_per_shard = math.ceil(datasets_per_cell / SHARD_REPLICATE_BLOCKS)
     median_wall = {
         cell_id: statistics.median(item.wall_seconds for item in values)
         for cell_id, values in by_cell.items()
     }
-    shard_wall_hours = {
-        cell_id: median_wall[cell_id] * datasets_per_shard * (1.0 + rerun_fraction) / 3600.0
-        for cell_id in PILOT_CELL_IDS
-    }
-    slowest_shard_cell = max(shard_wall_hours, key=shard_wall_hours.__getitem__)
-    max_shard_wall_hours = shard_wall_hours[slowest_shard_cell]
-    aggregate_pass = projected_cpu_hours <= ceiling_hours
-    shard_pass = max_shard_wall_hours <= SHARD_WALL_CEILING_HOURS
-    budget_pass = aggregate_pass and shard_pass
+    forecast = _budget_forecast(
+        cell_ids,
+        median_cpu,
+        median_wall,
+        datasets_per_cell=datasets_per_cell,
+        replicate_blocks=replicate_blocks,
+        rerun_fraction=rerun_fraction,
+        ceiling_hours=ceiling_hours,
+    )
     return {
-        "status": "pass" if budget_pass else "over_budget",
-        "budget_pass": budget_pass,
-        "aggregate_pass": aggregate_pass,
-        "shard_pass": shard_pass,
-        "reference_platform": REFERENCE_PLATFORM,
-        "shard_replicate_blocks": SHARD_REPLICATE_BLOCKS,
-        "shard_count": MATRIX_CELL_COUNT * SHARD_REPLICATE_BLOCKS,
-        "datasets_per_shard": datasets_per_shard,
-        "shard_wall_hours_by_cell": shard_wall_hours,
-        "slowest_shard_cell": slowest_shard_cell,
-        "max_shard_wall_hours": max_shard_wall_hours,
-        "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
-        "matrix_point_fits": MATRIX_CELL_COUNT * datasets_per_cell,
-        "matrix_bootstrap_refits": MATRIX_CELL_COUNT * datasets_per_cell * BOOTSTRAP_REPLICATES,
-        "matrix_complete_analyses": MATRIX_CELL_COUNT * datasets_per_cell * (BOOTSTRAP_REPLICATES + 1),
-        "datasets_per_cell": datasets_per_cell,
+        **forecast,
         "median_cpu_seconds_by_proxy": median_cpu,
         "integration_methods": integration_methods,
-        "proxy_cpu_seconds": proxy_cpu_seconds,
-        "base_cpu_seconds": base_cpu_seconds,
-        "rerun_fraction": rerun_fraction,
-        "projected_cpu_seconds": projected_cpu_seconds,
-        "projected_cpu_hours": projected_cpu_hours,
-        "ceiling_cpu_hours": ceiling_hours,
-        "proxy_map": {proxy: list(cells) for proxy, cells in PROXY_MAP.items()},
+        "proxy_cpu_seconds": dict(median_cpu),
+        "proxy_map": proxy_map,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Forecast-only mode: reuse measured per-dataset runtimes without fitting.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CellRuntime:
+    """Measured per-dataset seconds for one cell and where they came from."""
+
+    cell_id: str
+    cpu_seconds_per_dataset: float
+    wall_seconds_per_dataset: float
+    source_kind: str
+    source: str
+
+    def __post_init__(self) -> None:
+        for name in ("cpu_seconds_per_dataset", "wall_seconds_per_dataset"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0.0:
+                raise ValueError(f"{self.cell_id}: {name} must be finite and positive")
+        if self.source_kind not in {"cell_summary", "pilot_json"}:
+            raise ValueError(f"unknown runtime source kind: {self.source_kind}")
+
+
+def _display_path(path: Path) -> str:
+    """A repository-relative path, or the last two components outside it."""
+
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        return "/".join(resolved.parts[-2:])
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def load_cell_summary_runtimes(path: Path) -> dict[str, CellRuntime]:
+    """Read ``runtime_mean_seconds`` from an aggregated ``cell_summary.csv``.
+
+    The column is the mean wall-clock seconds of one complete dataset analysis
+    and repeats across a cell's metric rows; the first row per cell is used for
+    both the CPU and the wall forecast.
+    """
+
+    display = _display_path(path)
+    runtimes: dict[str, CellRuntime] = {}
+    with Path(path).open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames or []
+        if "cell_id" not in fields or "runtime_mean_seconds" not in fields:
+            raise ValueError(f"{display}: cell summary needs cell_id and runtime_mean_seconds columns")
+        for row in reader:
+            cell_id = str(row["cell_id"]).strip()
+            if not cell_id or cell_id in runtimes:
+                continue
+            raw = str(row["runtime_mean_seconds"] or "").strip()
+            try:
+                seconds = float(raw)
+            except ValueError as exc:
+                raise ValueError(f"{display}: {cell_id} has no numeric runtime_mean_seconds ({raw!r})") from exc
+            runtimes[cell_id] = CellRuntime(
+                cell_id=cell_id,
+                cpu_seconds_per_dataset=seconds,
+                wall_seconds_per_dataset=seconds,
+                source_kind="cell_summary",
+                source=display,
+            )
+    return runtimes
+
+
+def load_pilot_runtimes(path: Path) -> dict[str, CellRuntime]:
+    """Read per-cell median CPU and wall seconds from a runtime-pilot JSON.
+
+    Only cells whose every pilot repeat completed are usable; a blocked or
+    partial case is left out, so a forecast that needs it refuses.
+    """
+
+    display = _display_path(path)
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    cases = payload.get("cases") if isinstance(payload, Mapping) else None
+    if not isinstance(cases, list):
+        raise ValueError(f"{display}: runtime-pilot JSON has no cases list")
+    runtimes: dict[str, CellRuntime] = {}
+    for case in cases:
+        if not isinstance(case, Mapping):
+            continue
+        cell_id = str(case.get("cell_id") or "")
+        if not cell_id or case.get("statuses") != ["complete"]:
+            continue
+        cpu = case.get("median_cpu_seconds")
+        wall = case.get("median_wall_seconds")
+        if cpu is None or wall is None:
+            continue
+        runtimes[cell_id] = CellRuntime(
+            cell_id=cell_id,
+            cpu_seconds_per_dataset=float(cpu),
+            wall_seconds_per_dataset=float(wall),
+            source_kind="pilot_json",
+            source=display,
+        )
+    return runtimes
+
+
+def resolve_cell_runtimes(
+    cell_ids: Sequence[str],
+    sources: Sequence[Mapping[str, CellRuntime]],
+) -> dict[str, CellRuntime]:
+    """Take each cell from the first source that measured it; refuse gaps."""
+
+    resolved: dict[str, CellRuntime] = {}
+    for cell_id in cell_ids:
+        for source in sources:
+            if cell_id in source:
+                resolved[cell_id] = source[cell_id]
+                break
+    missing = [cell_id for cell_id in cell_ids if cell_id not in resolved]
+    if missing:
+        raise ValueError(
+            "no measured runtime for configured cell(s): "
+            + ", ".join(missing)
+            + "; supply a cell_summary.csv or a runtime-pilot JSON with a complete case for each"
+        )
+    return resolved
+
+
+def forecast_from_runtimes(
+    cell_ids: Sequence[str],
+    runtimes: Mapping[str, CellRuntime],
+    *,
+    datasets_per_cell: int = MATRIX_DATASETS_PER_CELL,
+    replicate_blocks: int = SHARD_REPLICATE_BLOCKS,
+    rerun_fraction: float = RERUN_FRACTION,
+    ceiling_hours: float = CPU_CEILING_HOURS,
+) -> dict[str, Any]:
+    """Forecast the matrix from measured runtimes, with the pilot's budget math."""
+
+    cell_ids = tuple(cell_ids)
+    _validate_forecast_settings(
+        cell_ids,
+        datasets_per_cell=datasets_per_cell,
+        replicate_blocks=replicate_blocks,
+        rerun_fraction=rerun_fraction,
+        ceiling_hours=ceiling_hours,
+    )
+    resolved = resolve_cell_runtimes(cell_ids, [runtimes])
+    forecast = _budget_forecast(
+        cell_ids,
+        {cell_id: resolved[cell_id].cpu_seconds_per_dataset for cell_id in cell_ids},
+        {cell_id: resolved[cell_id].wall_seconds_per_dataset for cell_id in cell_ids},
+        datasets_per_cell=datasets_per_cell,
+        replicate_blocks=replicate_blocks,
+        rerun_fraction=rerun_fraction,
+        ceiling_hours=ceiling_hours,
+    )
+    return {
+        **forecast,
+        "cell_runtimes": {
+            cell_id: {
+                "cpu_seconds_per_dataset": resolved[cell_id].cpu_seconds_per_dataset,
+                "wall_seconds_per_dataset": resolved[cell_id].wall_seconds_per_dataset,
+                "base_cpu_hours": resolved[cell_id].cpu_seconds_per_dataset * datasets_per_cell / 3600.0,
+                "source_kind": resolved[cell_id].source_kind,
+                "source": resolved[cell_id].source,
+            }
+            for cell_id in cell_ids
+        },
     }
 
 
@@ -616,7 +854,7 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
         f"- Pilot repeats: `{settings.get('repeats')}`; bootstrap replicates per case: `{settings.get('bootstrap_replicates')}`.",
         f"- Integration draws: `{settings.get('integration_draws')}`; tolerance: `{settings.get('integration_tolerance')}`.",
         f"- Targeted-rerun allowance: `{settings.get('rerun_fraction')}`; CPU ceiling: `{settings.get('ceiling_cpu_hours')}` hours.",
-        f"- Reference platform: `{settings.get('reference_platform', REFERENCE_PLATFORM)}`; shard layout: `{MATRIX_CELL_COUNT}` cells x "
+        f"- Reference platform: `{settings.get('reference_platform', REFERENCE_PLATFORM)}`; shard layout: `{len(settings.get('cell_ids') or PILOT_CELL_IDS)}` cells x "
         f"`{settings.get('shard_replicate_blocks', SHARD_REPLICATE_BLOCKS)}` replicate blocks; shard wall ceiling: "
         f"`{settings.get('shard_wall_ceiling_hours', SHARD_WALL_CEILING_HOURS)}` hours.",
         "",
@@ -674,6 +912,152 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def render_forecast_markdown(payload: Mapping[str, Any]) -> str:
+    """Render a forecast-only payload; no cases are measured in this mode."""
+
+    absolute = _find_absolute_path(payload)
+    if absolute:
+        raise ValueError(f"runtime forecast contains an absolute path: {absolute}")
+    settings = payload.get("forecast_settings", {})
+    forecast = payload.get("forecast", {})
+    lines = [
+        "# Runtime forecast from measured runtimes",
+        "",
+        "This forecast reuses measured per-dataset runtimes; no analysis was fitted to produce it. It applies the runtime pilot's budget arithmetic: aggregate CPU hours include the targeted-rerun allowance, and each shard runs one cell's replicate block sequentially.",
+        "",
+        f"- Status: `{payload.get('status')}`.",
+        f"- Source configuration: `{payload.get('source_config')}` (`{payload.get('source_config_hash')}`).",
+        f"- Git commit: `{payload.get('git_commit')}`.",
+        "",
+        "## Settings",
+        "",
+        f"- Cells: `{len(settings.get('cell_ids', []))}`; datasets per cell: `{settings.get('datasets_per_cell')}`; replicate blocks: `{settings.get('replicate_blocks')}`.",
+        f"- Targeted-rerun allowance: `{settings.get('rerun_fraction')}`; CPU ceiling: `{settings.get('ceiling_cpu_hours')}` hours.",
+        f"- Reference platform: `{settings.get('reference_platform')}`; shard wall ceiling: `{settings.get('shard_wall_ceiling_hours')}` hours.",
+        "",
+        "## Runtime sources",
+        "",
+        "| Kind | Source | SHA-256 | Cells used |",
+        "|---|---|---|---:|",
+    ]
+    for source in payload.get("runtime_sources", []):
+        lines.append(f"| {source.get('kind')} | `{source.get('source')}` | `{source.get('sha256')}` | {len(source.get('cells_used', []))} |")
+    lines.extend(
+        [
+            "",
+            "## Per-cell forecast",
+            "",
+            "| Cell | CPU s/dataset | Wall s/dataset | Base CPU hours | Shard wall hours | Source |",
+            "|---|---:|---:|---:|---:|---|",
+        ]
+    )
+    shard_hours = forecast.get("shard_wall_hours_by_cell", {})
+    for cell_id, runtime in forecast.get("cell_runtimes", {}).items():
+        lines.append(
+            f"| `{cell_id}` | {_format_number(runtime.get('cpu_seconds_per_dataset'))} | {_format_number(runtime.get('wall_seconds_per_dataset'))} | "
+            f"{_format_number(runtime.get('base_cpu_hours'))} | {_format_number(shard_hours.get(cell_id))} | {runtime.get('source_kind')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Matrix forecast",
+            "",
+            f"- Shards: `{forecast.get('shard_count')}` (`{forecast.get('cell_count')}` cells x `{forecast.get('shard_replicate_blocks')}` blocks of up to `{forecast.get('datasets_per_shard')}` datasets).",
+            f"- Complete analyses: `{forecast.get('matrix_complete_analyses')}`.",
+            f"- Base CPU hours: `{_format_number(forecast.get('base_cpu_hours'))}`.",
+            f"- Projected CPU hours including reruns: `{_format_number(forecast.get('projected_cpu_hours'))}` (aggregate gate pass: `{forecast.get('aggregate_pass')}`).",
+            f"- Slowest shard: `{forecast.get('slowest_shard_cell')}` at `{_format_number(forecast.get('max_shard_wall_hours'))}` wall hours (shard gate pass: `{forecast.get('shard_pass')}`).",
+            f"- Budget pass: `{forecast.get('budget_pass')}`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _run_forecast_only(args: argparse.Namespace) -> int:
+    if args.cell_summary is None and not args.pilot_json:
+        raise SystemExit("--forecast-only needs --cell-summary and/or --pilot-json")
+    config_path = Path(args.config).resolve()
+    config = load_config(config_path)
+    cell_ids = tuple(config.cell_ids)
+    loaded: list[tuple[str, Path, dict[str, CellRuntime]]] = []
+    if args.cell_summary is not None:
+        loaded.append(("cell_summary", Path(args.cell_summary), load_cell_summary_runtimes(Path(args.cell_summary))))
+    for pilot_path in args.pilot_json or ():
+        loaded.append(("pilot_json", Path(pilot_path), load_pilot_runtimes(Path(pilot_path))))
+    try:
+        resolved = resolve_cell_runtimes(cell_ids, [runtimes for _, _, runtimes in loaded])
+        forecast = forecast_from_runtimes(
+            cell_ids,
+            resolved,
+            datasets_per_cell=args.datasets_per_cell,
+            replicate_blocks=args.replicate_blocks,
+        )
+    except ValueError as exc:
+        raise SystemExit(f"forecast refused: {exc}") from exc
+    runtime_sources = [
+        {
+            "kind": kind,
+            "source": _display_path(path),
+            "sha256": _sha256(path),
+            "cells_measured": sorted(runtimes),
+            "cells_used": [cell_id for cell_id in cell_ids if resolved[cell_id] is runtimes.get(cell_id)],
+        }
+        for kind, path, runtimes in loaded
+    ]
+    status = forecast["status"]
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "experiment": FORECAST_EXPERIMENT,
+        "mode": "forecast_only",
+        "status": status,
+        "git_commit": _git_commit(),
+        "source_config": _display_path(config_path),
+        "source_config_hash": config.config_hash,
+        "forecast_settings": {
+            "cell_ids": list(cell_ids),
+            "datasets_per_cell": args.datasets_per_cell,
+            "replicate_blocks": args.replicate_blocks,
+            "bootstrap_replicates": BOOTSTRAP_REPLICATES,
+            "rerun_fraction": RERUN_FRACTION,
+            "ceiling_cpu_hours": CPU_CEILING_HOURS,
+            "reference_platform": REFERENCE_PLATFORM,
+            "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
+        },
+        "runtime_sources": runtime_sources,
+        "forecast": forecast,
+    }
+    output = Path(args.output or DEFAULT_FORECAST_OUTPUT).resolve()
+    _atomic_write(output, _json_text(payload))
+    summary: dict[str, Any] = {"status": status, "output": _display_path(output)}
+    if args.markdown is not None:
+        markdown = Path(args.markdown).resolve()
+        if markdown == DEFAULT_MARKDOWN.resolve():
+            raise SystemExit("forecast-only mode must not overwrite the runtime-pilot report")
+        persisted = json.loads(output.read_text(encoding="utf-8"))
+        _atomic_write(markdown, render_forecast_markdown(persisted))
+        summary["markdown"] = _display_path(markdown)
+    summary["forecast"] = {
+        key: forecast[key]
+        for key in (
+            "cell_count",
+            "datasets_per_cell",
+            "shard_replicate_blocks",
+            "shard_count",
+            "datasets_per_shard",
+            "base_cpu_hours",
+            "projected_cpu_hours",
+            "aggregate_pass",
+            "slowest_shard_cell",
+            "max_shard_wall_hours",
+            "shard_pass",
+            "budget_pass",
+        )
+    }
+    print(_json_text(summary))
+    return 0 if status == "pass" else 2
+
+
 def _run_parent(args: argparse.Namespace) -> int:
     supported = sys.version_info[:2] == (3, 11)
     if not supported and not args.allow_unsupported_runtime:
@@ -681,17 +1065,28 @@ def _run_parent(args: argparse.Namespace) -> int:
         return 2
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
+    cell_ids = tuple(config.cell_ids)
+    if args.pilot_cells:
+        unknown = sorted(set(args.pilot_cells) - set(cell_ids))
+        if unknown:
+            raise SystemExit(f"--pilot-cell is not in the configuration: {', '.join(unknown)}")
+        cell_ids = tuple(cell_id for cell_id in cell_ids if cell_id in set(args.pilot_cells))
     git_commit = _git_commit()
     measurements: list[PilotMeasurement] = []
     records: list[Mapping[str, Any]] = []
-    for cell_id in PILOT_CELL_IDS:
+    for cell_id in cell_ids:
         for repeat in range(args.repeats):
             record = _run_case(config_path, cell_id, repeat, allow_unsupported_runtime=args.allow_unsupported_runtime)
             records.append(record)
             measurements.append(PilotMeasurement(**record["measurement"]))
 
-    cases = _summarize_cases(measurements, records)
-    forecast = forecast_cpu_hours(measurements)
+    cases = _summarize_cases(measurements, records, cell_ids)
+    forecast = forecast_cpu_hours(
+        measurements,
+        cell_ids=cell_ids,
+        datasets_per_cell=args.datasets_per_cell,
+        replicate_blocks=args.replicate_blocks,
+    )
     status = forecast["status"]
     if not supported:
         status = "blocked"
@@ -704,10 +1099,11 @@ def _run_parent(args: argparse.Namespace) -> int:
         "runtime_supported": supported,
         "environment": _package_versions(),
         "git_commit": git_commit,
-        "source_config": "configs/mediation_validation.yaml",
+        "source_config": _display_path(config_path),
         "source_config_hash": config.config_hash,
         "pilot_settings": {
-            "cell_ids": list(PILOT_CELL_IDS),
+            "cell_ids": list(cell_ids),
+            "datasets_per_cell": args.datasets_per_cell,
             "repeats": args.repeats,
             "bootstrap_replicates": BOOTSTRAP_REPLICATES,
             "integration_draws": INTEGRATION_DRAWS,
@@ -715,27 +1111,57 @@ def _run_parent(args: argparse.Namespace) -> int:
             "rerun_fraction": RERUN_FRACTION,
             "ceiling_cpu_hours": CPU_CEILING_HOURS,
             "reference_platform": REFERENCE_PLATFORM,
-            "shard_replicate_blocks": SHARD_REPLICATE_BLOCKS,
+            "shard_replicate_blocks": args.replicate_blocks,
             "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
         },
         "cases": cases,
         "forecast": forecast,
     }
-    output = Path(args.output).resolve()
-    markdown = Path(args.markdown).resolve()
+    output = Path(args.output or DEFAULT_OUTPUT).resolve()
+    markdown = Path(args.markdown or DEFAULT_MARKDOWN).resolve()
     _atomic_write(output, _json_text(payload))
     persisted = json.loads(output.read_text(encoding="utf-8"))
     _atomic_write(markdown, render_markdown(persisted))
-    print(_json_text({"status": status, "output": str(output.relative_to(ROOT)), "markdown": str(markdown.relative_to(ROOT)), "forecast": forecast}))
+    print(_json_text({"status": status, "output": _display_path(output), "markdown": _display_path(markdown), "forecast": forecast}))
     return 0 if status == "pass" else 2
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--markdown", type=Path, default=DEFAULT_MARKDOWN)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="JSON output (default: results/generated/runtime-pilot.json, or runtime-forecast.json with --forecast-only)",
+    )
+    parser.add_argument(
+        "--markdown",
+        type=Path,
+        default=None,
+        help="Markdown output (default: docs/validation/runtime_pilot.md; with --forecast-only, written only when given)",
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repeats", type=int, default=2)
+    parser.add_argument("--datasets-per-cell", type=int, default=MATRIX_DATASETS_PER_CELL)
+    parser.add_argument("--replicate-blocks", type=int, default=SHARD_REPLICATE_BLOCKS)
+    parser.add_argument(
+        "--pilot-cell",
+        action="append",
+        dest="pilot_cells",
+        help="Pilot only this configured cell (repeatable; default: every configured cell)",
+    )
+    parser.add_argument(
+        "--forecast-only",
+        action="store_true",
+        help="Forecast from measured runtimes (--cell-summary, --pilot-json) without fitting",
+    )
+    parser.add_argument("--cell-summary", type=Path, help="Aggregated validation cell_summary.csv (runtime_mean_seconds)")
+    parser.add_argument(
+        "--pilot-json",
+        type=Path,
+        action="append",
+        help="Runtime-pilot JSON used for cells the cell summary lacks (repeatable; earlier sources win)",
+    )
     parser.add_argument("--allow-unsupported-runtime", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--cell-id", help=argparse.SUPPRESS)
@@ -758,6 +1184,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             worker_output=Path(args.worker_output),
         )
         return 0
+    if args.datasets_per_cell <= 0:
+        raise SystemExit("--datasets-per-cell must be positive")
+    if args.replicate_blocks <= 0 or args.replicate_blocks > args.datasets_per_cell:
+        raise SystemExit("--replicate-blocks must be positive and at most --datasets-per-cell")
+    if args.forecast_only:
+        if args.pilot_cells:
+            raise SystemExit("--pilot-cell applies to a pilot run, not --forecast-only")
+        return _run_forecast_only(args)
+    if args.cell_summary is not None or args.pilot_json:
+        raise SystemExit("--cell-summary and --pilot-json require --forecast-only")
     if args.repeats <= 0:
         raise SystemExit("--repeats must be positive")
     return _run_parent(args)

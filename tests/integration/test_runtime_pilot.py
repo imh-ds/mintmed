@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, replace
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.run_runtime_pilot import (
     PILOT_CELL_IDS,
     PROXY_MAP,
     PilotMeasurement,
     _json_text,
+    _parse_args,
     _pilot_config,
     _summarize_cases,
     _worker_timeout_seconds,
     forecast_cpu_hours,
+    forecast_from_runtimes,
     DEFAULT_CONFIG,
+    DEFAULT_MARKDOWN,
+    load_cell_summary_runtimes,
     load_config,
+    load_pilot_runtimes,
+    main,
     render_markdown,
+    resolve_cell_runtimes,
 )
 
 
@@ -309,3 +319,202 @@ def test_one_slow_cell_can_fail_the_shard_wall_clock_gate() -> None:
     assert forecast["max_shard_wall_hours"] == pytest.approx(300.0 * 50 * 1.05 / 3600)
     assert forecast["shard_pass"] is False
     assert forecast["status"] == "over_budget"
+
+
+# Task 16 (T16-S4): the matrix shape is a parameter and a forecast can be made
+# from measured runtimes without fitting.
+
+
+def test_matrix_shape_defaults_reproduce_the_run_one_layout() -> None:
+    args = _parse_args([])
+
+    assert args.datasets_per_cell == 200
+    assert args.replicate_blocks == 4
+    assert args.forecast_only is False
+    assert args.output is None and args.markdown is None
+
+
+def test_pilot_forecast_follows_the_given_cells_and_shard_layout() -> None:
+    cells = ("cell01_linear_n100", "cell10_moderated_n150")
+    measurements = [_measurement(cells[0], cpu_seconds=4.0), _measurement(cells[1], cpu_seconds=72.0)]
+
+    forecast = forecast_cpu_hours(measurements, cell_ids=cells, datasets_per_cell=500, replicate_blocks=10)
+
+    assert forecast["cell_count"] == 2
+    assert forecast["shard_count"] == 20
+    assert forecast["datasets_per_shard"] == 50
+    assert forecast["matrix_point_fits"] == 1000
+    assert forecast["base_cpu_seconds"] == pytest.approx((4.0 + 72.0) * 500)
+    assert forecast["max_shard_wall_hours"] == pytest.approx(72.0 * 50 * 1.05 / 3600)
+    with pytest.raises(ValueError, match="not in the pilot"):
+        forecast_cpu_hours(_complete_measurements(), cell_ids=cells)
+
+
+_FORECAST_CELLS = ("cell01_linear_n100", "cell06_parallel_interaction_n150", "cell10_moderated_n150")
+
+
+def _write_cell_summary(path: Path, seconds: dict[str, float]) -> Path:
+    # Two metric rows per cell; the first row per cell is the one used.
+    lines = ["cell_id,metric,runtime_mean_seconds,coverage"]
+    for cell_id, value in seconds.items():
+        lines.append(f"{cell_id},PNDE,{value},0.95")
+        lines.append(f"{cell_id},TE,{value + 1000.0},0.95")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_pilot_json(path: Path) -> Path:
+    cases = [
+        {"cell_id": "cell06_parallel_interaction_n150", "statuses": ["complete"], "median_cpu_seconds": 30.0, "median_wall_seconds": 36.0},
+        # Also in the cell summary, which takes precedence.
+        {"cell_id": "cell01_linear_n100", "statuses": ["complete"], "median_cpu_seconds": 99.0, "median_wall_seconds": 99.0},
+        # A blocked case is never usable.
+        {"cell_id": "cell02_linear_n250", "statuses": ["blocked"], "median_cpu_seconds": 1.0, "median_wall_seconds": 1.0},
+    ]
+    path.write_text(json.dumps({"status": "pass", "cases": cases}), encoding="utf-8")
+    return path
+
+
+def _forecast(tmp_path: Path, summary_seconds: dict[str, float], **kwargs: int) -> dict:
+    sources = [
+        load_cell_summary_runtimes(_write_cell_summary(tmp_path / "cell_summary.csv", summary_seconds)),
+        load_pilot_runtimes(_write_pilot_json(tmp_path / "pilot.json")),
+    ]
+    return forecast_from_runtimes(_FORECAST_CELLS, resolve_cell_runtimes(_FORECAST_CELLS, sources), **kwargs)
+
+
+def test_forecast_only_combines_cell_summary_and_pilot_runtimes(tmp_path: Path) -> None:
+    forecast = _forecast(
+        tmp_path,
+        {"cell01_linear_n100": 6.0, "cell10_moderated_n150": 72.0},
+        datasets_per_cell=500,
+        replicate_blocks=10,
+    )
+
+    # (6 + 30 + 72) s x 500 datasets = 54000 s = 15 h; x 1.05 = 15.75 h.
+    assert forecast["base_cpu_seconds"] == pytest.approx(54000.0)
+    assert forecast["base_cpu_hours"] == pytest.approx(15.0)
+    assert forecast["projected_cpu_hours"] == pytest.approx(15.75)
+    assert forecast["shard_count"] == 30
+    assert forecast["datasets_per_shard"] == 50
+    # Pilot cells use wall seconds for the shard gate: 36 s x 50 x 1.05.
+    assert forecast["shard_wall_hours_by_cell"]["cell06_parallel_interaction_n150"] == pytest.approx(0.525)
+    assert forecast["slowest_shard_cell"] == "cell10_moderated_n150"
+    assert forecast["max_shard_wall_hours"] == pytest.approx(1.05)
+    assert forecast["aggregate_pass"] is True
+    assert forecast["shard_pass"] is True
+    assert forecast["status"] == "pass"
+    runtimes = forecast["cell_runtimes"]
+    assert runtimes["cell01_linear_n100"]["source_kind"] == "cell_summary"
+    assert runtimes["cell01_linear_n100"]["cpu_seconds_per_dataset"] == 6.0
+    assert runtimes["cell06_parallel_interaction_n150"]["source_kind"] == "pilot_json"
+    assert runtimes["cell06_parallel_interaction_n150"]["source"].endswith("pilot.json")
+    assert runtimes["cell10_moderated_n150"]["base_cpu_hours"] == pytest.approx(10.0)
+
+
+def test_forecast_only_fails_each_ceiling_independently(tmp_path: Path) -> None:
+    # 336 s x 500 / 3600 x 1.05 = 49 h; five-dataset shards stay short.
+    aggregate = _forecast(
+        tmp_path,
+        {"cell01_linear_n100": 6.0, "cell10_moderated_n150": 300.0},
+        datasets_per_cell=500,
+        replicate_blocks=100,
+    )
+    assert aggregate["projected_cpu_hours"] == pytest.approx(49.0)
+    assert aggregate["max_shard_wall_hours"] == pytest.approx(300.0 * 5 * 1.05 / 3600)
+    assert (aggregate["aggregate_pass"], aggregate["shard_pass"], aggregate["status"]) == (False, True, "over_budget")
+
+    # 236 s x 500 / 3600 x 1.05 = 34.4 h; 250-dataset shards of cell 10 do not fit.
+    shard = _forecast(
+        tmp_path,
+        {"cell01_linear_n100": 6.0, "cell10_moderated_n150": 200.0},
+        datasets_per_cell=500,
+        replicate_blocks=2,
+    )
+    assert shard["projected_cpu_hours"] == pytest.approx(236.0 * 500 * 1.05 / 3600)
+    assert shard["shard_count"] == 6
+    assert shard["max_shard_wall_hours"] == pytest.approx(200.0 * 250 * 1.05 / 3600)
+    assert (shard["aggregate_pass"], shard["shard_pass"], shard["budget_pass"]) == (True, False, False)
+
+
+def test_forecast_only_rounds_uneven_replicate_blocks_up(tmp_path: Path) -> None:
+    forecast = _forecast(
+        tmp_path,
+        {"cell01_linear_n100": 6.0, "cell10_moderated_n150": 72.0},
+        datasets_per_cell=500,
+        replicate_blocks=3,
+    )
+
+    assert forecast["datasets_per_shard"] == 167
+    assert forecast["shard_count"] == 9
+
+
+def test_forecast_only_refuses_a_cell_without_a_measurement(tmp_path: Path) -> None:
+    summary = load_cell_summary_runtimes(_write_cell_summary(tmp_path / "cell_summary.csv", {"cell01_linear_n100": 6.0}))
+    pilot = load_pilot_runtimes(_write_pilot_json(tmp_path / "pilot.json"))
+
+    with pytest.raises(ValueError, match="cell10_moderated_n150"):
+        resolve_cell_runtimes(_FORECAST_CELLS, [summary, pilot])
+    with pytest.raises(ValueError, match="cell06_parallel_interaction_n150"):
+        forecast_from_runtimes(_FORECAST_CELLS, summary)
+    # The blocked pilot case does not count as a measurement.
+    with pytest.raises(ValueError, match="cell02_linear_n250"):
+        resolve_cell_runtimes(("cell02_linear_n250",), [pilot])
+
+
+def test_cell_summary_requires_the_runtime_column(tmp_path: Path) -> None:
+    path = tmp_path / "cell_summary.csv"
+    path.write_text("cell_id,metric\ncell01_linear_n100,PNDE\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="runtime_mean_seconds"):
+        load_cell_summary_runtimes(path)
+
+
+def test_forecast_only_cli_writes_json_and_optional_markdown(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    source = yaml.safe_load(DEFAULT_CONFIG.read_text(encoding="utf-8"))
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump({**source, "cell_ids": list(_FORECAST_CELLS)}, sort_keys=False), encoding="utf-8")
+    summary = _write_cell_summary(tmp_path / "cell_summary.csv", {"cell01_linear_n100": 6.0, "cell10_moderated_n150": 72.0})
+    pilot = _write_pilot_json(tmp_path / "pilot.json")
+    output = tmp_path / "out" / "forecast.json"
+    markdown = tmp_path / "out" / "forecast.md"
+
+    code = main(
+        [
+            "--forecast-only",
+            "--config", str(config_path),
+            "--cell-summary", str(summary),
+            "--pilot-json", str(pilot),
+            "--datasets-per-cell", "500",
+            "--replicate-blocks", "10",
+            "--output", str(output),
+            "--markdown", str(markdown),
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["mode"] == "forecast_only"
+    assert payload["forecast_settings"]["cell_ids"] == list(_FORECAST_CELLS)
+    assert payload["forecast"]["projected_cpu_hours"] == pytest.approx(15.75)
+    assert payload["forecast"]["shard_count"] == 30
+    by_kind = {item["kind"]: item for item in payload["runtime_sources"]}
+    assert by_kind["cell_summary"]["cells_used"] == ["cell01_linear_n100", "cell10_moderated_n150"]
+    assert by_kind["pilot_json"]["cells_used"] == ["cell06_parallel_interaction_n150"]
+    assert len(by_kind["pilot_json"]["sha256"]) == 64
+    report = markdown.read_text(encoding="utf-8")
+    assert "cell10_moderated_n150" in report and "15.750" in report
+    assert "C:\\" not in report and str(tmp_path) not in report
+    assert json.loads(capsys.readouterr().out)["forecast"]["slowest_shard_cell"] == "cell10_moderated_n150"
+
+    with pytest.raises(SystemExit, match="cell06_parallel_interaction_n150"):
+        main(["--forecast-only", "--config", str(config_path), "--cell-summary", str(summary), "--output", str(output)])
+    with pytest.raises(SystemExit, match="runtime-pilot report"):
+        main(
+            [
+                "--forecast-only", "--config", str(config_path), "--cell-summary", str(summary),
+                "--pilot-json", str(pilot), "--output", str(output), "--markdown", str(DEFAULT_MARKDOWN),
+            ]
+        )
+    with pytest.raises(SystemExit, match="require --forecast-only"):
+        main(["--cell-summary", str(summary)])
