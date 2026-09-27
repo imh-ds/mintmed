@@ -1257,6 +1257,32 @@ def run(
     return existing
 
 
+def replicate_block_range(replicates: int, block: str) -> tuple[int, int]:
+    """Return ``(start, stop)`` for block ``"i:n"`` (or ``"iofn"``) of ``replicates`` datasets.
+
+    The ``iofn`` spelling (for example ``0of4``) is safe in GitHub artifact
+    names, which cannot contain ``:``.
+
+    Blocks have ``ceil(replicates / n)`` datasets (the last may be shorter) and
+    together cover every replicate exactly once, so a sharded run can split
+    each cell into ``n`` jobs.
+    """
+
+    text = str(block)
+    parts = text.split(":") if ":" in text else text.split("of")
+    if len(parts) != 2:
+        raise ValueError("--replicate-block must look like INDEX:COUNT or INDEXofCOUNT, for example 0:4 or 0of4")
+    try:
+        index, count = (int(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError("--replicate-block INDEX and COUNT must be integers") from exc
+    if count < 1 or not 0 <= index < count:
+        raise ValueError("--replicate-block needs COUNT >= 1 and 0 <= INDEX < COUNT")
+    size = math.ceil(int(replicates) / count)
+    start = min(index * size, int(replicates))
+    return start, min(start + size, int(replicates))
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     import argparse
 
@@ -1268,6 +1294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--replicate", type=int)
     parser.add_argument("--replicate-start", type=int, default=0)
     parser.add_argument("--replicate-stop", type=int)
+    parser.add_argument("--replicate-block", help="shard block INDEX:COUNT of the replicates")
     parser.add_argument("--include-stress", action="store_true")
     parser.add_argument("--stress-only", action="store_true")
     parser.add_argument("--no-report", action="store_true")
@@ -1277,6 +1304,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--cell-id and --cell-ids cannot be combined")
         selected_cells = arguments.cell_ids or arguments.cell_ids_many
         config = load_config(arguments.config)
+        if arguments.replicate_block is not None:
+            if (
+                arguments.replicate is not None
+                or arguments.replicate_start != 0
+                or arguments.replicate_stop is not None
+            ):
+                raise ValueError("--replicate-block cannot be combined with --replicate or explicit bounds")
+            arguments.replicate_start, arguments.replicate_stop = replicate_block_range(
+                config.replicates, arguments.replicate_block
+            )
         run(
             config,
             arguments.output,
@@ -1313,6 +1350,7 @@ __all__ = [
     "generate_cell",
     "load_config",
     "metric_record",
+    "replicate_block_range",
     "row_from_payload",
     "run",
     "seed_pair",

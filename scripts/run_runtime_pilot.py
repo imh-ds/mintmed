@@ -67,7 +67,16 @@ BOOTSTRAP_REPLICATES = 399
 INTEGRATION_DRAWS = 256
 INTEGRATION_TOLERANCE = 1.0e-3
 RERUN_FRACTION = 0.05
-CPU_CEILING_HOURS = 12.0
+# Task 14 budget, amended 2026-09-27 (see the decision log). The authoritative
+# pilot runs on the reference GitHub runner. The aggregate ceiling guards total
+# compute; the shard gate guards wall-clock feasibility of the sharded matrix
+# (12 cells x SHARD_REPLICATE_BLOCKS replicate blocks) under GitHub's 6-hour
+# job limit. The original ceiling was 12 aggregate CPU-hours on unspecified
+# hardware.
+REFERENCE_PLATFORM = "github-actions ubuntu-latest"
+CPU_CEILING_HOURS = 36.0
+SHARD_REPLICATE_BLOCKS = 4
+SHARD_WALL_CEILING_HOURS = 4.0
 
 PROXY_MAP: Mapping[str, tuple[str, ...]] = {cell_id: (cell_id,) for cell_id in PILOT_CELL_IDS}
 WORKER_TIMEOUT_MARGIN_SECONDS = 900
@@ -513,9 +522,35 @@ def forecast_cpu_hours(
     base_cpu_seconds = sum(proxy_cpu_seconds[proxy] * len(cells) * datasets_per_cell for proxy, cells in PROXY_MAP.items())
     projected_cpu_seconds = base_cpu_seconds * (1.0 + rerun_fraction)
     projected_cpu_hours = projected_cpu_seconds / 3600.0
+    # Each shard runs one cell's replicate block sequentially in one process,
+    # so its wall time is the cell's per-dataset wall time times the block size.
+    datasets_per_shard = math.ceil(datasets_per_cell / SHARD_REPLICATE_BLOCKS)
+    median_wall = {
+        cell_id: statistics.median(item.wall_seconds for item in values)
+        for cell_id, values in by_cell.items()
+    }
+    shard_wall_hours = {
+        cell_id: median_wall[cell_id] * datasets_per_shard * (1.0 + rerun_fraction) / 3600.0
+        for cell_id in PILOT_CELL_IDS
+    }
+    slowest_shard_cell = max(shard_wall_hours, key=shard_wall_hours.__getitem__)
+    max_shard_wall_hours = shard_wall_hours[slowest_shard_cell]
+    aggregate_pass = projected_cpu_hours <= ceiling_hours
+    shard_pass = max_shard_wall_hours <= SHARD_WALL_CEILING_HOURS
+    budget_pass = aggregate_pass and shard_pass
     return {
-        "status": "pass" if projected_cpu_hours <= ceiling_hours else "over_budget",
-        "budget_pass": projected_cpu_hours <= ceiling_hours,
+        "status": "pass" if budget_pass else "over_budget",
+        "budget_pass": budget_pass,
+        "aggregate_pass": aggregate_pass,
+        "shard_pass": shard_pass,
+        "reference_platform": REFERENCE_PLATFORM,
+        "shard_replicate_blocks": SHARD_REPLICATE_BLOCKS,
+        "shard_count": MATRIX_CELL_COUNT * SHARD_REPLICATE_BLOCKS,
+        "datasets_per_shard": datasets_per_shard,
+        "shard_wall_hours_by_cell": shard_wall_hours,
+        "slowest_shard_cell": slowest_shard_cell,
+        "max_shard_wall_hours": max_shard_wall_hours,
+        "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
         "matrix_point_fits": MATRIX_CELL_COUNT * datasets_per_cell,
         "matrix_bootstrap_refits": MATRIX_CELL_COUNT * datasets_per_cell * BOOTSTRAP_REPLICATES,
         "matrix_complete_analyses": MATRIX_CELL_COUNT * datasets_per_cell * (BOOTSTRAP_REPLICATES + 1),
@@ -581,6 +616,9 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
         f"- Pilot repeats: `{settings.get('repeats')}`; bootstrap replicates per case: `{settings.get('bootstrap_replicates')}`.",
         f"- Integration draws: `{settings.get('integration_draws')}`; tolerance: `{settings.get('integration_tolerance')}`.",
         f"- Targeted-rerun allowance: `{settings.get('rerun_fraction')}`; CPU ceiling: `{settings.get('ceiling_cpu_hours')}` hours.",
+        f"- Reference platform: `{settings.get('reference_platform', REFERENCE_PLATFORM)}`; shard layout: `{MATRIX_CELL_COUNT}` cells x "
+        f"`{settings.get('shard_replicate_blocks', SHARD_REPLICATE_BLOCKS)}` replicate blocks; shard wall ceiling: "
+        f"`{settings.get('shard_wall_ceiling_hours', SHARD_WALL_CEILING_HOURS)}` hours.",
         "",
         "## Environment",
         "",
@@ -619,7 +657,10 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
             f"- Complete analyses: `{forecast.get('matrix_complete_analyses')}`.",
             f"- Base CPU seconds: `{_format_number(forecast.get('base_cpu_seconds'))}`.",
             f"- Projected CPU seconds including reruns: `{_format_number(forecast.get('projected_cpu_seconds'))}`.",
-            f"- Projected CPU hours: `{_format_number(forecast.get('projected_cpu_hours'))}`; budget pass: `{forecast.get('budget_pass')}`.",
+            f"- Projected CPU hours: `{_format_number(forecast.get('projected_cpu_hours'))}` (aggregate gate pass: `{forecast.get('aggregate_pass')}`).",
+            f"- Slowest shard: `{forecast.get('slowest_shard_cell')}` at `{_format_number(forecast.get('max_shard_wall_hours'))}` wall hours "
+            f"for `{forecast.get('datasets_per_shard')}` datasets (shard gate pass: `{forecast.get('shard_pass')}`).",
+            f"- Budget pass: `{forecast.get('budget_pass')}`.",
             "",
             "Every locked matrix cell is measured directly (no proxy cells), so each cell is forecast from its own integration path. The forecast includes point fits, attempted bootstrap refits, failures, serialization, and the 5% targeted-rerun allowance. A blocked case blocks the forecast; a passing forecast is a runtime boundary, not statistical validation.",
             "",
@@ -673,6 +714,9 @@ def _run_parent(args: argparse.Namespace) -> int:
             "integration_tolerance": INTEGRATION_TOLERANCE,
             "rerun_fraction": RERUN_FRACTION,
             "ceiling_cpu_hours": CPU_CEILING_HOURS,
+            "reference_platform": REFERENCE_PLATFORM,
+            "shard_replicate_blocks": SHARD_REPLICATE_BLOCKS,
+            "shard_wall_ceiling_hours": SHARD_WALL_CEILING_HOURS,
         },
         "cases": cases,
         "forecast": forecast,

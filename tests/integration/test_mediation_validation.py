@@ -743,7 +743,7 @@ def test_validation_report_states_the_zero_failure_interval_policy(tmp_path: Pat
 
 @pytest.mark.parametrize(
     ("block", "expected"),
-    [("0:4", (0, 50)), ("1:4", (50, 100)), ("3:4", (150, 200)), ("0:1", (0, 200)), ("2:3", (134, 200))],
+    [("0:4", (0, 50)), ("1:4", (50, 100)), ("3:4", (150, 200)), ("0:1", (0, 200)), ("2:3", (134, 200)), ("1of4", (50, 100))],
 )
 def test_replicate_blocks_partition_the_replicates(block: str, expected: tuple[int, int]) -> None:
     from mintmed.experiments.mediation_validation import replicate_block_range
