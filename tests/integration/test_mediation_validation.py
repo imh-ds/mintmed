@@ -301,7 +301,24 @@ _ALL_CELL_IDS = (
     "cell10_moderated_n150",
     "cell11_binary_mediator_n150",
     "cell12_mixed_binary_serial_n250",
+    "cell13_a_path_only_n100",
+    "cell14_b_path_only_n100",
 )
+_RUN1_CELL_IDS = _ALL_CELL_IDS[:12]
+_MIXED_NULL_CELL_IDS = ("cell13_a_path_only_n100", "cell14_b_path_only_n100")
+
+
+def test_registry_is_the_twelve_run1_cells_then_the_two_mixed_null_cells() -> None:
+    from mintmed.experiments.mediation_validation import _CELL_REGISTRY
+
+    assert tuple(cell.cell_id for cell in _CELL_REGISTRY) == _ALL_CELL_IDS
+    assert tuple(cell.ordinal for cell in _CELL_REGISTRY) == tuple(range(1, 15))
+    for cell_id in _MIXED_NULL_CELL_IDS:
+        definition = cell_definition(cell_id)
+        assert definition.n == 100
+        assert definition.outcome_kind == "continuous"
+        assert definition.metric_names == ("TE", "PNDE", "TNIE")
+        assert definition.truth_method == "closed_form"
 
 
 @pytest.mark.parametrize("cell_id", _ALL_CELL_IDS)
@@ -329,6 +346,8 @@ def test_outcome_kind_matches_the_generated_outcome_family(cell_id: str) -> None
         ("cell08_quadratic_n100", 1.615892),
         ("cell09_spline_n250", 1.615892),
         ("cell10_moderated_n150", 1.51771875),
+        ("cell13_a_path_only_n100", 1.1),
+        ("cell14_b_path_only_n100", 1.4625),
     ],
 )
 def test_population_outcome_sd_matches_the_closed_form_variance(cell_id: str, variance: float) -> None:
@@ -347,6 +366,135 @@ def test_population_outcome_sd_matches_a_large_simulation_within_one_percent(cel
     simulated = float(fixture.data["Y"].std(ddof=1))
 
     assert definition.population_outcome_sd == pytest.approx(simulated, rel=0.01)
+
+
+# Generating coefficients of the mixed-null cells, restated from the Task 16 plan:
+# M = a*A + 0.3C + e_M and Y = c*A + b*M + 0.3C + e_Y with A ~ Bernoulli(0.5),
+# C, e_M, e_Y ~ N(0, 1).
+_MIXED_NULL_COEFFICIENTS = {
+    "cell13_a_path_only_n100": {"a": 0.5, "b": 0.0, "c": 0.2},
+    "cell14_b_path_only_n100": {"a": 0.0, "b": 0.5, "c": 0.2},
+}
+
+
+@pytest.mark.parametrize("cell_id", _MIXED_NULL_CELL_IDS)
+def test_mixed_null_truths_match_the_linear_closed_form(cell_id: str) -> None:
+    coefficients = _MIXED_NULL_COEFFICIENTS[cell_id]
+    # Linear SEM without exposure-mediator interaction: PNDE = c, TNIE = a * b.
+    pnde = coefficients["c"]
+    tnie = coefficients["a"] * coefficients["b"]
+
+    assert cell_truth(cell_id) == pytest.approx((pnde + tnie, pnde, tnie), abs=1e-15)
+    assert cell_truth(cell_id) == pytest.approx((0.20, 0.20, 0.0), abs=1e-15)
+    assert generate_cell(cell_id, 12345).truth == pytest.approx((0.20, 0.20, 0.0), abs=1e-15)
+
+
+@pytest.mark.parametrize(
+    ("cell_id", "expected_sd"),
+    [("cell13_a_path_only_n100", 1.048809), ("cell14_b_path_only_n100", 1.209339)],
+)
+def test_mixed_null_population_sd_matches_the_reduced_form(cell_id: str, expected_sd: float) -> None:
+    a, b, c = (_MIXED_NULL_COEFFICIENTS[cell_id][key] for key in ("a", "b", "c"))
+    # Reduced form Y = (c + ab)A + (0.3 + 0.3b)C + b e_M + e_Y, Var(A) = 0.25.
+    variance = (c + a * b) ** 2 * 0.25 + (0.3 + 0.3 * b) ** 2 + b**2 + 1.0
+    definition = cell_definition(cell_id)
+
+    assert definition.population_outcome_sd == pytest.approx(math.sqrt(variance), rel=1e-12)
+    assert definition.population_outcome_sd == pytest.approx(expected_sd, abs=1e-6)
+    assert generate_cell(cell_id, 12345).metadata["population_outcome_sd"] == definition.population_outcome_sd
+
+
+@pytest.mark.parametrize("cell_id", _MIXED_NULL_CELL_IDS)
+def test_mixed_null_cells_fit_both_paths_unlike_the_structural_null_cells(cell_id: str) -> None:
+    def node_terms(fixture, response: str) -> set[str]:
+        return {term.variable for term in fixture.spec.node_by_response[response].terms}
+
+    fixture = generate_cell(cell_id, 12345)
+
+    assert node_terms(fixture, "M") == {"A", "C"}
+    assert node_terms(fixture, "Y") == {"A", "M", "C"}
+    assert {("A", "M"), ("M", "Y"), ("A", "Y")} <= set(fixture.spec.scientific.edges)
+    # Cells 03 and 04 omit the null path, which makes their TNIE a structural zero.
+    assert "A" not in node_terms(generate_cell("cell03_no_a_to_m_n100", 12345), "M")
+    assert "M" not in node_terms(generate_cell("cell04_no_m_to_y_n100", 12345), "Y")
+
+
+def test_mixed_null_generators_follow_the_planned_equations() -> None:
+    from dataclasses import replace as dataclass_replace
+
+    from mintmed.experiments.mediation_validation import _GENERATORS
+
+    for cell_id, coefficients in _MIXED_NULL_COEFFICIENTS.items():
+        definition = cell_definition(cell_id)
+        large = dataclass_replace(definition, n=200_000)
+        data = _GENERATORS[definition.generator_name](np.random.default_rng(20260927), large).data
+        design_m = np.column_stack([np.ones(len(data)), data["A"], data["C"]])
+        design_y = np.column_stack([np.ones(len(data)), data["A"], data["M"], data["C"]])
+        m_coef = np.linalg.lstsq(design_m, data["M"], rcond=None)[0]
+        y_coef = np.linalg.lstsq(design_y, data["Y"], rcond=None)[0]
+
+        assert m_coef[1:] == pytest.approx([coefficients["a"], 0.3], abs=0.02)
+        assert y_coef[1:] == pytest.approx([coefficients["c"], coefficients["b"], 0.3], abs=0.02)
+
+
+@pytest.mark.parametrize("cell_id", _MIXED_NULL_CELL_IDS)
+def test_mixed_null_cell_analyses_to_a_finite_nonzero_width_tnie_interval(cell_id: str) -> None:
+    from dataclasses import replace
+
+    from mintmed.api import analyze_mediation
+    from mintmed.experiments.mediation_validation import _prepare_spec
+    from mintmed.report import result_to_dict
+
+    # 200 is the smallest standard (non-provisional) bootstrap.
+    config = replace(load_config(FULL), bootstrap_replicates=200)
+    cell = cell_definition(cell_id)
+    data_seed, analysis_seed = seed_pair(config.master_seed, cell.ordinal, 0)
+    fixture = generate_cell(cell_id, data_seed)
+    payload = result_to_dict(analyze_mediation(fixture.data, _prepare_spec(fixture, config, analysis_seed)))
+    metrics = extract_metrics(payload, cell_id)
+
+    assert payload["overall_status"] == "complete"
+    tnie = metrics["TNIE"]
+    assert tnie["truth"] == 0.0
+    assert tnie["interval_available"] is True
+    assert math.isfinite(tnie["lower"]) and math.isfinite(tnie["upper"])
+    assert tnie["width"] > 0.0
+    # Estimated from both fitted paths, so not an exact structural zero.
+    assert tnie["estimate"] != 0.0
+    assert all(metrics[name]["interval_available"] for name in ("TE", "PNDE"))
+
+
+# Replicate-0 seeds under the run-1 master seed and a hash of the generated data
+# (rounded to 1e-10), recorded before cells 13 and 14 were added. The data hash is
+# pinned for the cells sharing _generate_single with the new cells.
+_RUN1_REPLICATE0 = {
+    "cell01_linear_n100": (9749156801862218311, 1517040108547190271, "f3b7046aba47e857119536bebe677ca6e7532c7eb804fa689830526e721a5704"),
+    "cell02_linear_n250": (18393521947888680065, 12211192867706340728, "1ebae4290eb6f6fe7254647421bd18e6d06327df2bc9d7c0e9fb18f48e78ca68"),
+    "cell03_no_a_to_m_n100": (17321050859608148715, 15133914886608369514, "f1b4fd1ef57b00d31c3ec564186109a17a31972ac2d27e5bf40255893ff39bf8"),
+    "cell04_no_m_to_y_n100": (11474411268886545291, 5175627949949465589, "38b1a08fbca89fc9f17ed451a6300ded9ac4a006f123fd01ae25e64908289a3b"),
+    "cell05_no_mediation_n100": (606836414183506420, 11884282232124138068, "733422d1e2d4ab66c95c2cb677ba364132a47e8a210e8d5317500b00f335b642"),
+    "cell06_parallel_interaction_n150": (13389059334210583280, 4714256512987312338, None),
+    "cell07_serial_three_n200": (10285833840680880939, 15914468360558903424, None),
+    "cell08_quadratic_n100": (18080853810247874549, 555564373055847375, "27c3471a845d2722dc97da4a53a9c78d8bb24c26e5483d4f4f35a2106dd2d430"),
+    "cell09_spline_n250": (7239412666220895527, 11183948589764991061, "d92adc6ab5e3cfa405b526319d0de8b61fd05b9ed03bb1fab95a32c32dec9983"),
+    "cell10_moderated_n150": (3206292282688137912, 14166730222897804110, None),
+    "cell11_binary_mediator_n150": (14738987893767480280, 7041204320721805569, None),
+    "cell12_mixed_binary_serial_n250": (9102382603507042662, 782119402276928458, None),
+}
+
+
+@pytest.mark.parametrize("cell_id", _RUN1_CELL_IDS)
+def test_run1_cells_reproduce_their_run1_seeds_and_data(cell_id: str) -> None:
+    import hashlib
+
+    data_seed, analysis_seed, data_hash = _RUN1_REPLICATE0[cell_id]
+    ordinal = cell_definition(cell_id).ordinal
+
+    assert ordinal == _RUN1_CELL_IDS.index(cell_id) + 1
+    assert seed_pair(load_config(FULL).master_seed, ordinal, 0) == (data_seed, analysis_seed)
+    if data_hash is not None:
+        values = np.round(generate_cell(cell_id, data_seed).data.to_numpy(dtype=float), 10)
+        assert hashlib.sha256(values.tobytes()).hexdigest() == data_hash
 
 
 def test_standard_payload_extracts_point_effects_and_bootstrap_intervals() -> None:
@@ -778,3 +926,76 @@ def test_cli_rejects_a_replicate_block_combined_with_explicit_bounds(tmp_path: P
     )
 
     assert exit_code == 2
+
+
+_CELL10_TRUTHS = {"TNIE_W0": 0.09, "TNIE_W1": 0.36, "TNIE_difference": 0.27}
+
+
+def _matrix_frames(config, *, zero_excluding_cell: str | None = None):
+    """Rows covering every configured cell; one cell's TNIE may exclude zero."""
+
+    rows = []
+    for cell_id in config.cell_ids:
+        definition = cell_definition(cell_id)
+        if cell_id == "cell10_moderated_n150":
+            truths = _CELL10_TRUTHS
+        else:
+            truths = dict(zip(("TE", "PNDE", "TNIE"), cell_truth(cell_id)))
+        for replicate in range(config.replicates):
+            metrics = {}
+            for name in definition.metric_names:
+                truth = truths[name]
+                lower, upper = truth - 0.1, truth + 0.1
+                if cell_id == zero_excluding_cell and name == "TNIE":
+                    lower, upper = 0.05, 0.15
+                metrics[name] = metric_record(truth, truth, lower, upper, status="complete")
+            rows.append(_raw_row(cell_id, replicate, metrics, config.config_hash))
+    raw = pd.DataFrame(rows)
+    return raw, summarize_metrics(expand_metrics(raw, config), raw, config)
+
+
+def _config_with_mixed_null_cells(tmp_path: Path, replicates: int):
+    raw = yaml.safe_load(FULL.read_text(encoding="utf-8"))
+    raw["cell_ids"] = list(_ALL_CELL_IDS)
+    raw["replicates"] = replicates
+    path = tmp_path / "with-mixed-null.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    return load_config(path)
+
+
+def test_null_gate_covers_the_structural_and_mixed_null_tnie_cells() -> None:
+    from mintmed.experiments.mediation_validation import NULL_TNIE_CELL_IDS
+
+    assert NULL_TNIE_CELL_IDS == (
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100",
+        "cell13_a_path_only_n100",
+        "cell14_b_path_only_n100",
+    )
+    assert all(cell_truth(cell_id)[2] == 0.0 for cell_id in NULL_TNIE_CELL_IDS)
+
+
+@pytest.mark.parametrize("cell_id", ["cell03_no_a_to_m_n100", *_MIXED_NULL_CELL_IDS])
+def test_false_zero_exclusion_in_a_null_cell_fails_the_null_gate(tmp_path: Path, cell_id: str) -> None:
+    # 40 datasets: a Wilson upper bound of 0/40 (0.088) is below the 0.10 gate.
+    config = _config_with_mixed_null_cells(tmp_path, replicates=40)
+
+    raw, summary = _matrix_frames(config)
+    clean = evaluate_gates(summary, raw, config)["gates"]["null_false_zero_wilson_upper"]
+    raw, summary = _matrix_frames(config, zero_excluding_cell=cell_id)
+    flagged = evaluate_gates(summary, raw, config)["gates"]["null_false_zero_wilson_upper"]
+
+    assert clean["passed"] is True
+    assert clean["observed"] < 0.10
+    assert flagged["passed"] is False
+    assert flagged["observed"] == pytest.approx(1.0)
+
+
+def test_non_null_cell_zero_exclusion_does_not_enter_the_null_gate(tmp_path: Path) -> None:
+    config = _config_with_mixed_null_cells(tmp_path, replicates=40)
+
+    raw, summary = _matrix_frames(config, zero_excluding_cell="cell01_linear_n100")
+    result = evaluate_gates(summary, raw, config)["gates"]["null_false_zero_wilson_upper"]
+
+    assert result["passed"] is True

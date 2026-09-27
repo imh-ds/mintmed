@@ -20,6 +20,7 @@ from scipy.stats import binom
 
 from .mediation_validation import (
     COMBINATION_COLUMNS,
+    NULL_TNIE_CELL_IDS,
     RAW_COLUMNS,
     ValidationConfig,
     cell_definition,
@@ -353,7 +354,7 @@ def evaluate_gates(
     else:
         coverage_gate = ("coverage_exact_binomial_bonferroni", _exact_binomial_coverage_gate(eligible, gates))
     null_rows = eligible.loc[eligible["metric"].isin({"TNIE"}) & (eligible["outcome_kind"] == "continuous")]
-    null_rows = null_rows.loc[null_rows["cell_id"].isin({"cell03_no_a_to_m_n100", "cell04_no_m_to_y_n100", "cell05_no_mediation_n100"})]
+    null_rows = null_rows.loc[null_rows["cell_id"].isin(set(NULL_TNIE_CELL_IDS))]
     null_upper = [float(value) for value in null_rows["zero_exclusion_wilson_upper"].dropna().tolist()]
     unavailable_rates = [float(value) for value in eligible["unavailable_or_fatal_rate"].dropna().tolist()]
 

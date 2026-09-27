@@ -417,6 +417,10 @@ _FIXED_TRUTHS: dict[str, tuple[float, float, float]] = {
     "cell08_quadratic_n100": (0.30, 0.20, 0.10),
     "cell09_spline_n250": (0.30, 0.20, 0.10),
     "cell10_moderated_n150": (0.29, 0.20, 0.09),
+    # Mixed-null cells (Task 16): one path is zero in the generator but both are
+    # fitted, so the TNIE of 0.5 * 0.0 or 0.0 * 0.5 is estimated, not structural.
+    "cell13_a_path_only_n100": (0.20, 0.20, 0.00),
+    "cell14_b_path_only_n100": (0.20, 0.20, 0.00),
 }
 
 
@@ -481,6 +485,10 @@ _OUTCOME_VARIANCE = {
     "moderated": 0.5 * (1.2421 + 1.5904) + (0.0**2 + 0.29**2 + 0.32**2 + 0.88**2) / 4 - ((0.0 + 0.29 + 0.32 + 0.88) / 4) ** 2,
     # Gaussian outcome with a Bernoulli mediator; see _cell11_outcome_variance.
     "binary_mediator": _cell11_outcome_variance(),
+    # M = 0.5A + 0.3C + e_M but Y = 0.2A + 0.0M + 0.3C + e_Y, so M drops out of Y.
+    "a_path_only": 0.2**2 * 0.25 + 0.3**2 + 1.0,
+    # M = 0.3C + e_M, so Y = 0.2A + 0.45C + 0.5e_M + e_Y.
+    "b_path_only": 0.2**2 * 0.25 + 0.45**2 + 0.5**2 + 1.0,
 }
 
 
@@ -503,6 +511,18 @@ _CELL_REGISTRY = (
     # in outcome units and it is gated on the continuous SD-scaled bias rule.
     ValidationCell("cell11_binary_mediator_n150", 11, 150, "binary_mediator", "continuous", truth_method="gauss_hermite_64", population_outcome_sd=_outcome_sd("binary_mediator")),
     ValidationCell("cell12_mixed_binary_serial_n250", 12, 250, "mixed_binary_serial", "binary", truth_method="gauss_hermite_64"),
+    # Task 16 mixed-null cells. Unlike cells 03-05, the fitted specs declare both
+    # A -> M and M -> Y, so a false indirect effect is possible.
+    ValidationCell("cell13_a_path_only_n100", 13, 100, "a_path_only", "continuous", population_outcome_sd=_outcome_sd("a_path_only")),
+    ValidationCell("cell14_b_path_only_n100", 14, 100, "b_path_only", "continuous", population_outcome_sd=_outcome_sd("b_path_only")),
+)
+# Cells whose TNIE truth is zero; their TNIE feeds the null false zero-exclusion gate.
+NULL_TNIE_CELL_IDS: tuple[str, ...] = (
+    "cell03_no_a_to_m_n100",
+    "cell04_no_m_to_y_n100",
+    "cell05_no_mediation_n100",
+    "cell13_a_path_only_n100",
+    "cell14_b_path_only_n100",
 )
 _CELL_BY_ID = {cell.cell_id: cell for cell in _CELL_REGISTRY}
 if len(_CELL_BY_ID) != len(_CELL_REGISTRY) or {
@@ -673,17 +693,23 @@ def _generate_single(rng: np.random.Generator, cell: ValidationCell) -> Simulati
     e_m = rng.standard_normal(n)
     if cell.generator_name == "no_a_to_m":
         m = 0.3 * c + e_m
+    elif cell.generator_name == "b_path_only":
+        m = 0.0 * a + 0.3 * c + e_m
     else:
         m = 0.5 * a + 0.3 * c + e_m
     e_y = rng.standard_normal(n)
     if cell.generator_name in {"no_m_to_y", "no_mediation"}:
         y = 0.2 * a + 0.3 * c + e_y
+    elif cell.generator_name == "a_path_only":
+        y = 0.2 * a + 0.0 * m + 0.3 * c + e_y
     elif cell.generator_name == "quadratic" or cell.generator_name == "spline":
         y = 0.2 * a + 0.4 * m**2 + 0.3 * c + e_y
     else:
         y = 0.2 * a + 0.5 * m + 0.3 * c + e_y
     if cell.generator_name == "no_mediation":
         m = 0.3 * c + e_m
+    # Only cells 03-05 omit a path from the fitted spec; the mixed-null cells
+    # (a_path_only, b_path_only) keep both paths so their TNIE is estimated.
     spec = _single_spec(
         outcome_kind=Family.GAUSSIAN,
         outcome_term_kind=TermKind.NATURAL_SPLINE if cell.generator_name == "spline" else (
@@ -838,6 +864,8 @@ _GENERATORS: Mapping[str, Callable[[np.random.Generator, ValidationCell], Simula
     "no_mediation": _generate_single,
     "quadratic": _generate_single,
     "spline": _generate_single,
+    "a_path_only": _generate_single,
+    "b_path_only": _generate_single,
     "parallel_interaction": _generate_parallel_interaction,
     "serial_three": _generate_serial_three,
     "moderated": _generate_moderated,
@@ -1361,6 +1389,7 @@ if __name__ == "__main__":
 __all__ = [
     "COMBINATION_COLUMNS",
     "EVIDENCE_ARTIFACTS",
+    "NULL_TNIE_CELL_IDS",
     "RAW_COLUMNS",
     "ValidationCell",
     "ValidationConfig",
