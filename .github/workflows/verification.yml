@@ -16,6 +16,26 @@ on:
         required: true
         type: string
         default: "2"
+      pilot_config:
+        description: "Validation config whose cells the pilot measures"
+        required: false
+        type: string
+        default: "configs/mediation_validation.yaml"
+      pilot_cells:
+        description: "Cells to pilot, space- or comma-separated (empty: every configured cell)"
+        required: false
+        type: string
+        default: ""
+      pilot_datasets_per_cell:
+        description: "Datasets per cell for the forecast (empty: the config's replicates)"
+        required: false
+        type: string
+        default: ""
+      pilot_replicate_blocks:
+        description: "Replicate blocks per cell for the shard forecast"
+        required: false
+        type: string
+        default: "4"
 
 permissions:
   contents: read
@@ -109,11 +129,36 @@ jobs:
       - name: Install package and test dependencies
         run: python -m pip install -e ".[test]"
       - name: Run runtime pilot
-        run: >
-          python scripts/run_runtime_pilot.py
-          --repeats "${{ inputs.pilot_repeats || '2' }}"
-          --output results/generated/runtime-pilot.json
-          --markdown results/generated/runtime-pilot.md
+        # Inputs are empty on the `pilot:` push trigger, so every value falls
+        # back to the run-1 defaults. They reach the shell only through
+        # environment variables and are always quoted.
+        env:
+          PILOT_REPEATS: ${{ inputs.pilot_repeats || '2' }}
+          PILOT_CONFIG: ${{ inputs.pilot_config || 'configs/mediation_validation.yaml' }}
+          PILOT_CELLS: ${{ inputs.pilot_cells || '' }}
+          PILOT_DATASETS_PER_CELL: ${{ inputs.pilot_datasets_per_cell || '' }}
+          PILOT_REPLICATE_BLOCKS: ${{ inputs.pilot_replicate_blocks || '4' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --repeats "$PILOT_REPEATS"
+            --config "$PILOT_CONFIG"
+            --replicate-blocks "$PILOT_REPLICATE_BLOCKS"
+            --output results/generated/runtime-pilot.json
+            --markdown results/generated/runtime-pilot.md
+          )
+          if [ -n "$PILOT_DATASETS_PER_CELL" ]; then
+            args+=(--datasets-per-cell "$PILOT_DATASETS_PER_CELL")
+          fi
+          IFS=$', \t\n' read -r -a cells <<< "$PILOT_CELLS" || true
+          for cell in "${cells[@]}"; do
+            if [ -n "$cell" ]; then
+              args+=(--pilot-cell "$cell")
+            fi
+          done
+          echo "run_runtime_pilot.py ${args[*]}"
+          python scripts/run_runtime_pilot.py "${args[@]}"
       - name: Upload runtime-pilot evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
