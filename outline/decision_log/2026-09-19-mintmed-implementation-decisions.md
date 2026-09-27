@@ -1009,6 +1009,23 @@ Each task entry should record:
 - **Files:** `outline/plan/task-16-coverage-revalidation.md`, a machine-readable plan with YAML front matter and step ids T16-S1 to T16-S8.
 - **Follow-up:** Before the charter is frozen, the owner decides whether to add a null-TNIE cell whose model includes both paths.
 
+### Task 16 — mixed-null cells added
+
+- **Date:** 2026-09-27
+- **Task:** Task 16 — Revalidate interval coverage under the Option B pass rule.
+- **Status:** Planned.
+- **Decision:** The owner added two cells to the Task 16 design. Both fit models that declare **both** paths, so the null TNIE is estimated rather than structurally zero.
+  - **`cell13_a_path_only_n100`:** `M = 0.5A + 0.3C + e`; `Y = 0.2A + 0·M + 0.3C + e`.
+  - **`cell14_b_path_only_n100`:** `M = 0·A + 0.3C + e`; `Y = 0.2A + 0.5M + 0.3C + e`.
+  - Both have N = 100 and truths TE 0.20, PNDE 0.20, TNIE 0.
+- **Rationale:** Run 1's null cells (03–05) omit the null path from the fitted model. Their TNIE is therefore always exactly zero, and the false zero-exclusion gate could not fail. The main risk for users is a false indirect effect when one path is truly zero but estimated. Mixed nulls, where one path is real and the other zero, are the known weak case for bootstrap tests of indirect effects.
+- **Consequences:**
+  - 14 cells, 140 shards, 7,000 rows.
+  - Coverage k rises from 32 to 38, so the critical count becomes 458 of 500. A calibrated method passes everything with probability 0.968, and true 90% coverage is detected with probability 0.90.
+  - The null gate now covers the TNIE of cells 03, 04, 05, 13 and 14.
+  - The forecast rises to about 30.8 CPU-hours including the allowance, within the 36-hour budget.
+- **Files:** `outline/plan/task-16-coverage-revalidation.md`, where a new step T16-S2 adds the cells and the later steps are renumbered to T16-S3 to T16-S9.
+
 ## Reusable entry template
 
 ### Task NN — Name
