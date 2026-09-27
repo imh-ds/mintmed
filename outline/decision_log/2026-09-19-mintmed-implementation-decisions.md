@@ -873,6 +873,28 @@ Each task entry should record:
 - **Files:** `scripts/run_runtime_pilot.py`; `src/mintmed/experiments/mediation_validation.py`; `tests/integration/test_runtime_pilot.py`; `tests/integration/test_mediation_validation.py`; this decision log.
 - **Follow-up:** Push and re-run the verification workflow with `run_pilot`. If the amended pilot passes, regenerate `docs/validation/runtime_pilot.md` from the CI artifact and record the run ID as the Task 14 acceptance evidence.
 
+#### Tasks 12–14 verification — post-audit branch passes in GitHub Actions
+
+- **Date:** 2026-09-27
+- **Task:** Tasks 12, 13 and 14; verification that supersedes the "re-verification pending" and "blocked" statuses in the 2026-09-26 status correction (audit BUG-27).
+- **Status:**
+  - Tasks 12 and 13: **completed and verified**.
+  - Task 14: **completed**; runtime acceptance passes under the amended budget.
+  - Task 15: not started; it is now unblocked and awaits the owner's instruction.
+- **Schedule:** Completed on the owner's instruction; no external deadline.
+- **Evidence:** All runs are GitHub Actions on `ubuntu-latest`, Python 3.11.
+  - Push run `36293906861` on `54c9f30`: the full Python 3.11 suite and the CLI examples/validation smoke passed, including the example output check.
+  - Dispatch run `36293907650` on `54c9f30` (`run_pilot=true`, 2 repeats): the suite and smoke passed, and the Task 14 pilot passed.
+    - Every locked cell was measured directly, 2 datasets × 399 refits each. All cases were `complete`, with analysis statuses `complete`/`complete_with_warnings` and **0 failed refits**.
+    - Forecast: **20.717 CPU-hours** including the 5% rerun allowance, within the 36-hour aggregate gate.
+    - The slowest shard is `cell10_moderated_n150` at **1.159 wall-clock hours** for 50 datasets, within the 4-hour shard gate.
+    - `budget_pass: true`. Source configuration hash: `176be1124d5b…`.
+  - The earlier post-audit runs `36285800615` and `36285805451` on `e93368a` had already passed the suites and smoke. Their pilot was over the superseded 12-hour ceiling (23.965 CPU-hours), which triggered the amendment above.
+- **Actions:** `docs/validation/runtime_pilot.md` was replaced with the Markdown that CI rendered from the run `36293907650` JSON artifact (`runtime-pilot-36293907650`). It contains no absolute paths. The authoritative JSON remains the CI artifact.
+- **Files:** `docs/validation/runtime_pilot.md`; this decision log.
+- **Verification:** See Evidence. The local suite also passed (`532 passed`, Python 3.11.9 `.venv`) at `32d8838`.
+- **Follow-up:** Task 15 (the full 2,400-dataset matrix) can run through `.github/workflows/sharded_benchmark.yml` with dimension 1 = `--cell-id` (the 12 cells) and dimension 2 = `--replicate-block` (`0of4,1of4,2of4,3of4`), then `scripts/aggregate_shards.py`. It has not been started.
+
 ## Reusable entry template
 
 ### Task NN — Name
