@@ -842,6 +842,37 @@ Each task entry should record:
 - **Files:** this decision log.
 - **Follow-up:** Push `codex/resolve-tasks-2-14` (owner's decision) and run the verification workflow with `run_pilot`. If the Python 3.11 suite, the smoke and the two-repeat pilot pass, record the run IDs in a dated entry that marks Tasks 12–14 verified and completed. Task 15 must not start before then.
 
+#### Task 14 amendment — sharded runtime budget
+
+- **Date:** 2026-09-27
+- **Task:** Task 14 (runtime acceptance) and Task 15 (matrix execution); owner-approved plan amendment.
+- **Status:** Amendment applied. Task 14 stays blocked until the amended gate passes in GitHub Actions.
+- **Schedule:** Applied on the owner's instruction; no external deadline.
+- **Trigger:**
+  - The branch was pushed at `e93368a`.
+  - Push run `36285800615` passed the Python 3.11 suite and the CLI examples/validation smoke. Dispatch run `36285805451` passed both as well.
+  - The dispatch run's two-repeat, all-12-cell pilot completed every case with 399 refits and 0 failures. It forecast **23.965 CPU-hours** (`over_budget` against 12).
+  - The same code forecast 10.899 CPU-hours on the local Windows machine. The GitHub runner is about 2–3× slower per dataset: cell 10 took 165.3 s against 81.1 s, and cell 08 took 34.2 s against 10.4 s.
+- **Decision:** Replace the Task 14 ceiling of 12 aggregate CPU-hours on unspecified hardware with a budget declared on GitHub Actions `ubuntu-latest`. The forecast must meet both gates:
+  1. **Aggregate gate:** at most **36 CPU-hours**, including the 5% rerun allowance. That is 1.5× the measured 23.965, leaving margin for runner variance. It remains a guard against compute regressions.
+  2. **Shard gate:** the matrix runs as **48 shards**, 12 cells × 4 replicate blocks of 50 datasets. The slowest shard's projected wall time (median per-dataset wall seconds × 50 × 1.05) must be at most **4 hours**, which is under GitHub's 6-hour job limit with margin.
+
+  `scripts/run_runtime_pilot.py` implements both gates in `32d8838` (`REFERENCE_PLATFORM`, `CPU_CEILING_HOURS = 36.0`, `SHARD_REPLICATE_BLOCKS = 4`, `SHARD_WALL_CEILING_HOURS = 4.0`). The validation runner gains `--replicate-block INDEX:COUNT` (or `INDEXofCOUNT`, which is safe in artifact names). The sharded workflow can then run `--cell-id <cell> --replicate-block <i>of4`.
+- **Rationale:**
+  - The 12-hour figure was a planning budget, not a scientific requirement.
+  - The hardware it referred to was never declared.
+  - It measured aggregate CPU, so parallel shards could not satisfy it even though they make the run fast in wall-clock terms.
+  - The repository is public, so GitHub Actions compute is free. What actually limits execution is the per-job time limit, which the shard gate now addresses.
+  - Reaching 12 CPU-hours on GitHub hardware would need about a 2× speed-up for no scientific benefit.
+  - The frozen design is untouched: 12 cells, 200 datasets, 399 refits, 256 draws, `1e-3` tolerance, the gates and the configuration hash. The Task 14 plan's rule against silent design reduction still holds.
+  - If this ruling is wrong, the cost is up to 36 CPU-hours of free CI compute per full matrix run. The shard gate still blocks any run that could not finish.
+- **Actions:**
+  - Red contracts in `d519586`; implementation in `32d8838`.
+  - `outline/plan/task-14-acceptance.md` has a dated amendment note beside the superseded ceiling. That file is git-ignored; this entry is the tracked record.
+- **Evidence:** The measured GitHub pilot values pass the amended gates: 23.965 ≤ 36 CPU-hours. The slowest shard is cell 10 at 165.269 × 50 × 1.05 / 3600 = 2.41 hours, within 4. Tests pin the constants, both gates and the replicate-block partitioning. A smoke run with `--replicate-block 1of2` produced exactly replicate 1. Full suite: `532 passed` locally.
+- **Files:** `scripts/run_runtime_pilot.py`; `src/mintmed/experiments/mediation_validation.py`; `tests/integration/test_runtime_pilot.py`; `tests/integration/test_mediation_validation.py`; this decision log.
+- **Follow-up:** Push and re-run the verification workflow with `run_pilot`. If the amended pilot passes, regenerate `docs/validation/runtime_pilot.md` from the CI artifact and record the run ID as the Task 14 acceptance evidence.
+
 ## Reusable entry template
 
 ### Task NN — Name
