@@ -14,6 +14,7 @@ from scripts.run_runtime_pilot import (
     PILOT_CELL_IDS,
     PROXY_MAP,
     PilotMeasurement,
+    _apply_matrix_shape,
     _json_text,
     _parse_args,
     _pilot_config,
@@ -327,11 +328,28 @@ def test_one_slow_cell_can_fail_the_shard_wall_clock_gate() -> None:
 
 def test_matrix_shape_defaults_reproduce_the_run_one_layout() -> None:
     args = _parse_args([])
+    _apply_matrix_shape(args, load_config(DEFAULT_CONFIG))
 
     assert args.datasets_per_cell == 200
     assert args.replicate_blocks == 4
     assert args.forecast_only is False
     assert args.output is None and args.markdown is None
+
+
+def test_datasets_per_cell_defaults_to_the_config_replicates() -> None:
+    v2 = load_config(DEFAULT_CONFIG.with_name("mediation_validation_v2.yaml"))
+    assert v2.replicates == 500
+
+    derived = _parse_args(["--replicate-blocks", "10"])
+    _apply_matrix_shape(derived, v2)
+    assert (derived.datasets_per_cell, derived.replicate_blocks) == (500, 10)
+
+    explicit = _parse_args(["--datasets-per-cell", "120"])
+    _apply_matrix_shape(explicit, v2)
+    assert explicit.datasets_per_cell == 120
+
+    with pytest.raises(SystemExit, match="replicate-blocks"):
+        _apply_matrix_shape(_parse_args(["--datasets-per-cell", "5", "--replicate-blocks", "10"]), v2)
 
 
 def test_pilot_forecast_follows_the_given_cells_and_shard_layout() -> None:

@@ -67,8 +67,10 @@ PILOT_CELL_IDS: tuple[str, ...] = (
     "cell11_binary_mediator_n150",
     "cell12_mixed_binary_serial_n250",
 )
-# Matrix-shape defaults (run 1). ``--datasets-per-cell`` and
-# ``--replicate-blocks`` override them; the cell count is the config's.
+# Matrix-shape defaults of the pure forecast functions (run 1). The CLI takes
+# the cell list and datasets per cell from the loaded config (``replicates``)
+# unless ``--datasets-per-cell`` overrides it; ``--replicate-blocks`` defaults
+# to SHARD_REPLICATE_BLOCKS.
 MATRIX_DATASETS_PER_CELL = 200
 BOOTSTRAP_REPLICATES = 399
 INTEGRATION_DRAWS = 256
@@ -974,11 +976,23 @@ def render_forecast_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _apply_matrix_shape(args: argparse.Namespace, config: ValidationConfig) -> None:
+    """Default datasets per cell to the config's replicates, then validate the shape."""
+
+    if args.datasets_per_cell is None:
+        args.datasets_per_cell = int(config.replicates)
+    if args.datasets_per_cell <= 0:
+        raise SystemExit("--datasets-per-cell must be positive")
+    if args.replicate_blocks <= 0 or args.replicate_blocks > args.datasets_per_cell:
+        raise SystemExit("--replicate-blocks must be positive and at most --datasets-per-cell")
+
+
 def _run_forecast_only(args: argparse.Namespace) -> int:
     if args.cell_summary is None and not args.pilot_json:
         raise SystemExit("--forecast-only needs --cell-summary and/or --pilot-json")
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
+    _apply_matrix_shape(args, config)
     cell_ids = tuple(config.cell_ids)
     loaded: list[tuple[str, Path, dict[str, CellRuntime]]] = []
     if args.cell_summary is not None:
@@ -1065,6 +1079,7 @@ def _run_parent(args: argparse.Namespace) -> int:
         return 2
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
+    _apply_matrix_shape(args, config)
     cell_ids = tuple(config.cell_ids)
     if args.pilot_cells:
         unknown = sorted(set(args.pilot_cells) - set(cell_ids))
@@ -1142,7 +1157,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--repeats", type=int, default=2)
-    parser.add_argument("--datasets-per-cell", type=int, default=MATRIX_DATASETS_PER_CELL)
+    parser.add_argument(
+        "--datasets-per-cell",
+        type=int,
+        default=None,
+        help="Datasets per cell in the forecast matrix (default: the config's replicates)",
+    )
     parser.add_argument("--replicate-blocks", type=int, default=SHARD_REPLICATE_BLOCKS)
     parser.add_argument(
         "--pilot-cell",
@@ -1184,10 +1204,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             worker_output=Path(args.worker_output),
         )
         return 0
-    if args.datasets_per_cell <= 0:
-        raise SystemExit("--datasets-per-cell must be positive")
-    if args.replicate_blocks <= 0 or args.replicate_blocks > args.datasets_per_cell:
-        raise SystemExit("--replicate-blocks must be positive and at most --datasets-per-cell")
     if args.forecast_only:
         if args.pilot_cells:
             raise SystemExit("--pilot-cell applies to a pilot run, not --forecast-only")
