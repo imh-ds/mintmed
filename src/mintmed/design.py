@@ -16,9 +16,26 @@ from .diagnostics import NodeFitError
 from .spec import CompiledNodePlan, Family, InteractionSpec, TermKind, TermSpec
 
 
+def _categorical_factor(data: Any, levels: Any) -> Any:
+    """Patsy factor for declared categorical terms.
+
+    ``C(data, levels=...)`` wraps its input, and Patsy then converts the
+    values one at a time. That is slow on participant-by-draw frames. When
+    the input is already a pandas categorical whose categories are exactly
+    the declared levels (see :func:`_with_frozen_categoricals`), it is
+    returned unwrapped so Patsy reads its integer codes directly. The coding
+    and levels are identical either way.
+    """
+
+    dtype = getattr(data, "dtype", None)
+    if isinstance(dtype, pd.CategoricalDtype) and tuple(dtype.categories) == tuple(levels):
+        return data
+    return patsy.builtins.C(data, levels=levels)
+
+
 _PATSY_NAMESPACE = {
     "Q": patsy.builtins.Q,
-    "_mintmed_categorical": patsy.builtins.C,
+    "_mintmed_categorical": _categorical_factor,
     "I": patsy.builtins.I,
     "cr": patsy.builtins.cr,
 }
@@ -451,6 +468,28 @@ def _fast_linear_transform(
     return pd.DataFrame(matrix, columns=design.columns, index=data.index)
 
 
+def _with_frozen_categoricals(design: FrozenDesign, data: pd.DataFrame) -> pd.DataFrame:
+    """Return ``data`` with categorical-term columns as frozen-level categoricals.
+
+    Values have already passed :func:`_check_frozen_categories`, so every
+    non-missing value maps to a declared level; missing values become code -1,
+    which Patsy's ``NA_action="raise"`` still rejects.
+    """
+
+    variables = {
+        term.variable
+        for term in design.term_metadata
+        if term.kind is TermKind.CATEGORICAL and term.variable in data.columns
+    }
+    if not variables:
+        return data
+    frame = data.copy(deep=False)
+    for variable in variables:
+        levels = list(design.category_levels[variable])
+        frame[variable] = pd.Categorical(data[variable], categories=levels)
+    return frame
+
+
 def transform_design(
     design: FrozenDesign,
     data: pd.DataFrame,
@@ -486,7 +525,7 @@ def transform_design(
         try:
             transformed = patsy.build_design_matrices(
                 [design.design_info],
-                data,
+                _with_frozen_categoricals(design, data),
                 return_type="dataframe",
                 NA_action="raise",
             )[0]
