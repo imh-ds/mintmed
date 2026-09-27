@@ -36,6 +36,8 @@ from mintmed.experiments.mediation_validation_reporting import (
 ROOT = Path(__file__).parents[2]
 SMOKE = ROOT / "configs" / "mediation_validation_smoke.yaml"
 FULL = ROOT / "configs" / "mediation_validation.yaml"
+V2 = ROOT / "configs" / "mediation_validation_v2.yaml"
+RUN1_CONFIG_HASH = "176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94"
 
 
 def test_smoke_config_has_unique_combinations_and_locked_cells() -> None:
@@ -999,3 +1001,62 @@ def test_non_null_cell_zero_exclusion_does_not_enter_the_null_gate(tmp_path: Pat
     result = evaluate_gates(summary, raw, config)["gates"]["null_false_zero_wilson_upper"]
 
     assert result["passed"] is True
+
+
+def test_v2_config_is_the_fourteen_cell_coverage_revalidation_design() -> None:
+    from mintmed.experiments.mediation_validation import coverage_rule
+
+    config = load_config(V2)
+    run1 = load_config(FULL)
+
+    assert run1.config_hash == RUN1_CONFIG_HASH
+    assert config.config_hash != RUN1_CONFIG_HASH
+    assert config.experiment == "mintmed_coverage_revalidation"
+    assert config.master_seed == 20260927
+    assert config.cell_ids == _ALL_CELL_IDS
+    assert config.cell_ids[:12] == run1.cell_ids
+    assert config.replicates == 500
+    assert expected_row_count(config) == 7_000
+    assert (config.bootstrap_replicates, config.bootstrap_mode) == (399, "standard")
+    assert (config.integration_draws, config.integration_tolerance) == (256, 1.0e-3)
+    assert (config.max_seconds, config.memory_budget_mb) == (run1.max_seconds, run1.memory_budget_mb)
+    assert config.canonical_dict["stress"] == run1.canonical_dict["stress"]
+    assert dict(config.gates) == {
+        "continuous_abs_bias_sd": 0.05,
+        "binary_abs_bias_probability": 0.02,
+        "null_false_zero_wilson_upper": 0.10,
+        "unavailable_or_fatal_max": 0.01,
+        "coverage_family_alpha": 0.05,
+        "coverage_nominal": 0.95,
+    }
+    assert coverage_rule(dict(config.gates)) == "exact_binomial_bonferroni"
+
+
+def test_v2_config_gates_38_coverage_effects_with_critical_count_458() -> None:
+    from dataclasses import replace
+
+    from mintmed.experiments.mediation_validation_reporting import coverage_critical_count
+
+    config = load_config(V2)
+    # Every cell-metric except cell 10's direct TNIE_W0/TNIE_W1 points is gated:
+    # 32 run-1 cell-metrics plus TE, PNDE and TNIE for each of cells 13 and 14.
+    by_definition = [
+        (cell_id, metric)
+        for cell_id in config.cell_ids
+        for metric in cell_definition(cell_id).metric_names
+        if not (cell_id == "cell10_moderated_n150" and metric in {"TNIE_W0", "TNIE_W1"})
+    ]
+    assert sum(cell_id in _RUN1_CELL_IDS for cell_id, _ in by_definition) == 32
+    assert len(by_definition) == 38
+
+    small = replace(config, replicates=2)
+    raw, summary = _matrix_frames(small)
+    gate = evaluate_gates(summary, raw, small)["gates"]["coverage_exact_binomial_bonferroni"]
+    assert gate["gated_effects"] == 38
+    assert {(effect["cell_id"], effect["metric"]) for effect in gate["effects"]} == set(by_definition)
+
+    gates = dict(config.gates)
+    critical = coverage_critical_count(
+        config.replicates, gate["gated_effects"], gates["coverage_nominal"], gates["coverage_family_alpha"]
+    )
+    assert critical == 458
