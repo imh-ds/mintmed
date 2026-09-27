@@ -895,6 +895,25 @@ Each task entry should record:
 - **Verification:** See Evidence. The local suite also passed (`532 passed`, Python 3.11.9 `.venv`) at `32d8838`.
 - **Follow-up:** Task 15 (the full 2,400-dataset matrix) can run through `.github/workflows/sharded_benchmark.yml` with dimension 1 = `--cell-id` (the 12 cells) and dimension 2 = `--replicate-block` (`0of4,1of4,2of4,3of4`), then `scripts/aggregate_shards.py`. It has not been started.
 
+#### Task 05 correction — fast categorical design transforms
+
+- **Date:** 2026-09-27
+- **Task:** Task 5 (frozen designs); performance correction found while fixing audit BUG-17. It was flagged as a separate task and then done on the owner's instruction.
+- **Status:** Completed.
+- **Schedule:** Applied on the owner's instruction; no external deadline.
+- **Decision:**
+  - `transform_design` converts categorical-term columns to pandas `Categorical`s with the frozen levels, after the unseen-level check.
+  - The `_mintmed_categorical` Patsy factor returns such a column unwrapped, so Patsy reads its integer codes. Any other input still goes through `C(x, levels=...)`.
+  - Coding, levels and missing-value rejection are unchanged.
+- **Rationale:** Patsy checks for its pandas-`Categorical` fast path before unwrapping `C(...)`'s box, so every categorical term was converted value by value. On participant × draw Sobol frames this took about 94% of the runtime.
+- **Actions:** Red contracts in `2be1725`. Implementation in `45642e9`. `d649c60` restores the moderated example's original `basis: categorical` declarations, reversing the BUG-17 linear-basis workaround.
+- **Evidence:**
+  - The transform equals Patsy's own output on a 6,000-row frame, and unseen levels are still rejected.
+  - Per-value NA checks dropped from 6,000 to fewer than 150.
+  - The 50-replicate moderated example with categorical `A`/`W` now runs in 14 s instead of 266 s. Estimates and interval bounds match the linear-basis run to 1e-15.
+  - No validation cell uses categorical terms, so the Task 14 pilot is unaffected. Full suite: `535 passed`.
+- **Files:** `src/mintmed/design.py`; `tests/mediation/test_design.py`; `examples/serial_moderated/analysis.yaml`; this decision log.
+
 ## Reusable entry template
 
 ### Task NN — Name
