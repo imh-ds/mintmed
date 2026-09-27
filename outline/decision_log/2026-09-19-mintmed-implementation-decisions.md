@@ -1045,6 +1045,30 @@ Each task entry should record:
 - **Rules:** Run 1 is not re-graded. After dispatch the charter changes only through the one-correction rule.
 - **Files:** `docs/validation/coverage_revalidation_charter.md`; this decision log.
 
+### Task 16 — run 2 gate results (null false-positive gate FAILED)
+
+- **Date:** 2026-09-27
+- **Task:** Task 16, steps T16-S6 to T16-S8.
+- **Status:** Gates applied as chartered. **Failed on the null false zero-exclusion gate.** The owner's decision on the one-correction rule is pending.
+- **Run:** sharded run `36349731184` on charter commit `9ff5de6`, GitHub Actions `ubuntu-latest`, Python 3.11.16.
+  - 140 of 140 shards succeeded (20:54 to 23:14 UTC).
+  - 30.30 CPU-hours summed shard runtime, against a forecast of 29.79 and a limit of 36.
+- **Grid:** 7,000 of 7,000 rows. 0 duplicates, 0 missing, 0 extra, one configuration hash (`0f2f7388…`).
+  - Every row: 399 standard refits, status `complete` (5,500) or `complete_with_warnings` (1,500), no failure codes.
+  - The gates were re-evaluated locally from the raw rows and agree with the artifact's `summary.json`.
+- **Gates:**
+  - continuous bias 0.0108 SD against 0.05 — pass;
+  - binary bias 0.0026 against 0.02 — pass;
+  - **coverage (Option B) — pass.** k = 38 and no effect is at or below 458/500. The lowest are cell 07 PNDE and cell 14 TNIE at 461 (p = 0.0046 against a per-effect level of 0.0013). Mean coverage is 94.9%.
+  - unavailable/fatal 0 against 0.01 — pass;
+  - **null false zero-exclusion: Wilson upper bound 0.1049 against 0.10 — FAIL.**
+- **What drives the failure:**
+  - **Cell 14 TNIE** (A → M truly zero, M → Y = 0.5, both paths fitted): 39 of 500 intervals excluded zero (7.8%). That is above the nominal 5% (one-sided exact binomial p = 0.0046). The misses are balanced (21 above / 18 below), so the intervals are too narrow rather than shifted.
+  - **Cell 13 TNIE** (M → Y truly zero): 22 of 500 (4.4%, Wilson upper 0.066). Pass.
+  - **Cells 03–05:** 0 of 500 each (structural zeros). Pass.
+- **Also notable:** run 1's TNIE undercoverage in cells 08 and 11 did not replicate at 500 datasets: 473/500 (94.6%) and 470/500 (94.0%). Cell 08's misses are still one-sided (24 above / 3 below).
+- **Next:** under the charter's one-correction rule, the owner decides whether to make one targeted correction with a rerun of the affected cell, or to document the limitation. Run 2's result is recorded as failed either way.
+
 ## Reusable entry template
 
 ### Task NN — Name
