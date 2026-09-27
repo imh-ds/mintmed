@@ -739,3 +739,42 @@ def test_validation_report_states_the_zero_failure_interval_policy(tmp_path: Pat
     summary = json.loads((tmp_path / "summary.json").read_text(encoding="utf-8"))
     assert "zero-failure" in report
     assert summary["provenance"]["interval_rule"] == "all_399_refits_must_succeed"
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [("0:4", (0, 50)), ("1:4", (50, 100)), ("3:4", (150, 200)), ("0:1", (0, 200)), ("2:3", (134, 200))],
+)
+def test_replicate_blocks_partition_the_replicates(block: str, expected: tuple[int, int]) -> None:
+    from mintmed.experiments.mediation_validation import replicate_block_range
+
+    assert replicate_block_range(200, block) == expected
+
+
+def test_replicate_blocks_cover_every_replicate_exactly_once() -> None:
+    from mintmed.experiments.mediation_validation import replicate_block_range
+
+    covered = [
+        replicate
+        for index in range(4)
+        for replicate in range(*replicate_block_range(200, f"{index}:4"))
+    ]
+    assert covered == list(range(200))
+
+
+@pytest.mark.parametrize("block", ["4:4", "-1:4", "0:0", "a:4", "1", "1:2:3"])
+def test_invalid_replicate_blocks_are_rejected(block: str) -> None:
+    from mintmed.experiments.mediation_validation import replicate_block_range
+
+    with pytest.raises(ValueError):
+        replicate_block_range(200, block)
+
+
+def test_cli_rejects_a_replicate_block_combined_with_explicit_bounds(tmp_path: Path) -> None:
+    from mintmed.experiments.mediation_validation import main
+
+    exit_code = main(
+        ["--config", str(SMOKE), "--output", str(tmp_path), "--replicate-block", "0:2", "--replicate-start", "1"]
+    )
+
+    assert exit_code == 2

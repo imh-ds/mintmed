@@ -238,3 +238,74 @@ def test_json_projection_rejects_nonfinite_values() -> None:
 
     with pytest.raises(ValueError, match="nonfinite"):
         _json_text(payload)
+
+
+# 2026-09-27 budget amendment: aggregate CPU ceiling on the reference GitHub
+# runner plus a per-shard wall-clock gate for the declared 48-shard layout.
+_GHA_PER_DATASET_SECONDS = {
+    "cell01_linear_n100": 8.047,
+    "cell02_linear_n250": 8.464,
+    "cell03_no_a_to_m_n100": 7.249,
+    "cell04_no_m_to_y_n100": 7.414,
+    "cell05_no_mediation_n100": 7.437,
+    "cell06_parallel_interaction_n150": 60.475,
+    "cell07_serial_three_n200": 13.981,
+    "cell08_quadratic_n100": 34.248,
+    "cell09_spline_n250": 48.365,
+    "cell10_moderated_n150": 165.269,
+    "cell11_binary_mediator_n150": 20.583,
+    "cell12_mixed_binary_serial_n250": 29.296,
+}
+
+
+def _measurements_from(seconds: dict[str, float]) -> list[PilotMeasurement]:
+    return [_measurement(cell_id, cpu_seconds=seconds[cell_id]) for cell_id in PILOT_CELL_IDS]
+
+
+def test_amended_budget_constants_are_declared() -> None:
+    from scripts.run_runtime_pilot import (
+        CPU_CEILING_HOURS,
+        REFERENCE_PLATFORM,
+        SHARD_REPLICATE_BLOCKS,
+        SHARD_WALL_CEILING_HOURS,
+    )
+
+    assert CPU_CEILING_HOURS == 36.0
+    assert SHARD_REPLICATE_BLOCKS == 4
+    assert SHARD_WALL_CEILING_HOURS == 4.0
+    assert REFERENCE_PLATFORM == "github-actions ubuntu-latest"
+
+
+def test_measured_github_pilot_passes_the_amended_budget() -> None:
+    forecast = forecast_cpu_hours(_measurements_from(_GHA_PER_DATASET_SECONDS))
+
+    assert forecast["projected_cpu_hours"] == pytest.approx(23.965, abs=0.01)
+    assert forecast["shard_count"] == 48
+    assert forecast["datasets_per_shard"] == 50
+    assert forecast["slowest_shard_cell"] == "cell10_moderated_n150"
+    assert forecast["max_shard_wall_hours"] == pytest.approx(165.269 * 50 * 1.05 / 3600, rel=1e-6)
+    assert forecast["aggregate_pass"] is True
+    assert forecast["shard_pass"] is True
+    assert forecast["status"] == "pass"
+    assert forecast["budget_pass"] is True
+
+
+def test_aggregate_cpu_above_the_ceiling_is_over_budget() -> None:
+    forecast = forecast_cpu_hours(_complete_measurements(cpu_seconds=60.0))
+
+    assert forecast["projected_cpu_hours"] == pytest.approx(42.0)
+    assert forecast["aggregate_pass"] is False
+    assert forecast["shard_pass"] is True
+    assert forecast["status"] == "over_budget"
+
+
+def test_one_slow_cell_can_fail_the_shard_wall_clock_gate() -> None:
+    seconds = {cell_id: 5.0 for cell_id in PILOT_CELL_IDS}
+    seconds["cell10_moderated_n150"] = 300.0
+
+    forecast = forecast_cpu_hours(_measurements_from(seconds))
+
+    assert forecast["aggregate_pass"] is True
+    assert forecast["max_shard_wall_hours"] == pytest.approx(300.0 * 50 * 1.05 / 3600)
+    assert forecast["shard_pass"] is False
+    assert forecast["status"] == "over_budget"
