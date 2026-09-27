@@ -943,6 +943,52 @@ Each task entry should record:
   2. If one is adopted as the correction, implement it with tests, rerun the matrix and report run 2 alongside run 1.
   3. Record a feasible, pre-set coverage rule for any **future** validation plan; it will not be applied to this run.
 
+### Task 15 — interval correction not adopted; research-beta boundary published
+
+- **Date:** 2026-09-27
+- **Task:** Task 15 — Publish the research-beta boundary and user guide.
+- **Status:** Completed as a documented failure. Run 1's coverage gate failure stands, and no rerun was made.
+- **Schedule:** On the owner's instruction; no external deadline.
+- **Decision:** The owner accepted the recommendation not to use the charter's one correction:
+  - Mintmed keeps the percentile bootstrap interval.
+  - Run 1 is the Task 15 result.
+  - The indirect-effect undercoverage in cells 08 and 11 is published as a known limitation.
+- **Rationale:** BC and BCa were tested on the run-1 datasets of cells 11, 08 and 01 (control). Coverage out of 200, where the gate needs 189:
+  - **Cell 11 TNIE:** 179 (percentile) → 182 (BC) → 184 (BCa).
+  - **Cell 08 TNIE:** 183 → 187 → 186.
+  - **Cell 08 PNDE:** 190 → 188 → 187.
+  - **Cell 01 (control):** unchanged at 186–191.
+
+  The gains are about the size of the Monte Carlo error, and neither method reaches the gate. BCa balanced cell 11's misses (truth above/below the interval 15/6 → 9/7), but cost several times the runtime. The control cell also sits below the gate under every method. So the root cause is mainly the gate's infeasibility at 200 datasets, which an interval change cannot fix. Using the single correction on it would not change the verdict.
+- **Actions:**
+  - Added `scripts/compare_bootstrap_intervals.py`, a diagnostic outside the package and gates.
+  - Wrote `docs/validation/interval_correction_check.md` and `docs/validation/baseline_evidence.md`.
+  - Updated the README and added `docs/user-guide.md`. Both state the failed coverage check and the TNIE limitation.
+  - Ran the stress fixtures and the clean-install check.
+- **Evidence:**
+  - BC/BCa: 600 datasets, all `complete`, each with 399 successful replicates. The percentile intervals reproduced run 1 exactly. Row-level output is in git-ignored `results/generated/bc-bca-experiment/`.
+  - Stress: `--stress-only` on `a3e9dc5`. All four N = 50 fixtures finished `complete_with_warnings`.
+  - Clean install in a fresh Python 3.11.9 venv:
+    - `pip install .` succeeded;
+    - the `examples/single` CLI run exited 0;
+    - `pip check` found no broken requirements;
+    - pytest (after installing the `test` extra, because `pip install .` does not include it) gave 535 passed.
+    - Versions: numpy 2.4.6, pandas 3.0.6, patsy 1.0.3, scipy 1.17.1, statsmodels 0.14.6.
+- **Cost if this ruling is wrong:** If a better interval exists for skewed indirect effects, users of nonlinear-outcome or binary-mediator designs get TNIE intervals that are somewhat too narrow until a later release. The limitation is stated in the README, the user guide and the evidence report.
+- **Coverage rule for future validation plans** (proposal; not applied to run 1):
+  - **Datasets:** 500 per gated cell. This keeps Monte Carlo error to about ±1 percentage point.
+  - **Per-effect rule:** fail an effect if an exact one-sided binomial test against 95% coverage gives p ≤ 0.05 / k, where k is the number of gated effects. With k = 32, that means fail at 459 or fewer covered out of 500 (≤ 91.8%).
+  - **Properties:** perfectly calibrated intervals pass every effect together with probability about 0.95. True 90% coverage is detected with probability about 0.93, and true 92% with about 0.46.
+  - **Budget:** this needs about 2.5 times run 1's compute, roughly 28 CPU-hours at run 1's measured rate. It must be re-forecast against the budget before adoption.
+- **Files:**
+  - `docs/validation/interval_correction_check.md`
+  - `docs/validation/baseline_evidence.md`
+  - `docs/user-guide.md`
+  - `README.md`
+  - `scripts/compare_bootstrap_intervals.py`
+  - this decision log
+- **Follow-up:** Any future work on skewed indirect-effect intervals is a new feature with its own pre-registered validation, not a rerun of Task 15.
+
 ## Reusable entry template
 
 ### Task NN — Name
