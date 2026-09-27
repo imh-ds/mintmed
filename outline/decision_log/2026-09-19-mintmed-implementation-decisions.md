@@ -989,6 +989,26 @@ Each task entry should record:
   - this decision log
 - **Follow-up:** Any future work on skewed indirect-effect intervals is a new feature with its own pre-registered validation, not a rerun of Task 15.
 
+### Task 16 — Option B coverage rule adopted
+
+- **Date:** 2026-09-27
+- **Task:** Task 16 — Revalidate interval coverage under the Option B pass rule.
+- **Status:** Planned. Starts 2026-09-27; due 2026-10-04.
+- **Decision:** The owner adopted Option B as the coverage rule for the next validation:
+  - **Datasets:** 500 per cell.
+  - **Rule:** each gated effect fails if an exact one-sided binomial test against 95% gives p ≤ 0.05 / k. With k = 32, that means failing at 459 or fewer covered out of 500.
+  - **Unchanged:** the other gates stay as they are.
+- **Rationale:** Among the options considered, Option B balances fairness, detection power and cost:
+  - A calibrated method passes every effect together with probability 0.95.
+  - Real 90% coverage is caught with probability 0.93. Option A (200 datasets) catches it only 0.44 of the time.
+  - It needs about 29.3 CPU-hours including the rerun allowance, within the 36 CPU-hour budget. Option C (1,000 datasets) would need about 56 CPU-hours.
+- **Constraints:**
+  - Run 1 is not re-graded.
+  - The new run uses a new master seed (20260927), so no run-1 dataset is reused.
+  - The rule is frozen in a charter before dispatch.
+- **Files:** `outline/plan/task-16-coverage-revalidation.md`, a machine-readable plan with YAML front matter and step ids T16-S1 to T16-S8.
+- **Follow-up:** Before the charter is frozen, the owner decides whether to add a null-TNIE cell whose model includes both paths.
+
 ## Reusable entry template
 
 ### Task NN — Name
