@@ -1026,6 +1026,25 @@ Each task entry should record:
   - The forecast rises to about 30.8 CPU-hours including the allowance, within the 36-hour budget.
 - **Files:** `outline/plan/task-16-coverage-revalidation.md`, where a new step T16-S2 adds the cells and the later steps are renumbered to T16-S3 to T16-S9.
 
+### Task 16 — revalidation charter frozen
+
+- **Date:** 2026-09-27
+- **Task:** Task 16, step T16-S5.
+- **Status:** Charter frozen; ready for dispatch (T16-S6).
+- **Decision:** `docs/validation/coverage_revalidation_charter.md` fixes run 2 before dispatch.
+  - **Config:** `configs/mediation_validation_v2.yaml`. Committed-bytes SHA-256 `6e82d246…f33f75`; canonical config hash `0f2f7388…b953b`.
+  - **Design:** 14 cells × 500 datasets × 399 refits, master seed 20260927.
+  - **Coverage gate:** Option B (k = 38, critical count 458 of 500).
+  - **Other gates:** thresholds unchanged. The null gate covers the TNIE of cells 03, 04, 05, 13 and 14.
+  - **Shards:** 140 (10 replicate blocks per cell).
+  - **Estimator:** unchanged from run 1.
+- **Evidence:**
+  - Steps S1–S4 were reviewed and accepted: commits 87a3973, 329cca2, d2a841d, bda2575, 5b4bebe and b8ac243. The full suite passes (597).
+  - The runtime forecast passes, from the GitHub pilot of cells 13–14 (run `36349462559`) plus run 1's measured runtimes: 31.28 CPU-hours of 36, slowest shard 1.10 h of 4.
+- **Operating characteristics:** if every effect covers exactly 95%, all 38 pass with probability 0.968. An effect whose true coverage is 90% fails with probability 0.900.
+- **Rules:** Run 1 is not re-graded. After dispatch the charter changes only through the one-correction rule.
+- **Files:** `docs/validation/coverage_revalidation_charter.md`; this decision log.
+
 ## Reusable entry template
 
 ### Task NN — Name
