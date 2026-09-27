@@ -914,6 +914,35 @@ Each task entry should record:
   - No validation cell uses categorical terms, so the Task 14 pilot is unaffected. Full suite: `535 passed`.
 - **Files:** `src/mintmed/design.py`; `tests/mediation/test_design.py`; `examples/serial_moderated/analysis.yaml`; this decision log.
 
+#### Task 15 — run 1 of the frozen validation matrix: coverage gate FAILED
+
+- **Date:** 2026-09-27
+- **Task:** Task 15 — execute the frozen matrix under `docs/validation/baseline_release_charter.md` (committed in `04cbf2d` before dispatch).
+- **Status:** **Failed.** The pre-registered coverage gate failed; the bias, null false-zero and unavailable/fatal gates passed. Task 15 is not complete.
+- **Schedule:** On the owner's instruction; no external deadline.
+- **Decision:** The owner chose to record the failure as the honest result of run 1, with no post-hoc re-grading. The gate is not amended for this run. Under the charter's one-correction rule, the next step is to test a bias-corrected bootstrap interval (BC and BCa) as the single targeted correction. Any rerun is reported alongside run 1, never in place of it.
+- **Evidence:**
+  - **Run:** sharded run `36296143027` on `04cbf2d` (GitHub Actions `ubuntu-latest`, Python 3.11.16). All 48 shards and the aggregation succeeded.
+  - **Grid:** 2,400 of 2,400 rows under the single configuration hash `176be112…`, with no duplicates, no fit or integration failures, and no intervals withheld by failed refits.
+  - **Gates:**
+    - continuous |bias| 0.0111 SD against a 0.05 limit — pass;
+    - binary |bias| 0.0060 against a 0.02 limit — pass;
+    - null false-zero Wilson upper bound 0.0188 against a 0.10 limit — pass;
+    - unavailable/fatal 0 against a 1% limit — pass;
+    - **coverage: minimum Wilson lower bound 0.845 against 0.90 — FAIL.** 16 of 32 gated effects had fewer than 189 of 200 intervals covering the truth.
+  - Mean coverage was 94.8%.
+- **Diagnosis** (after the run):
+  - **The gate is effectively unattainable at 200 datasets.** Even at a true 95% coverage, all 32 effects pass with probability about 1 × 10⁻⁵; at 94%, about 1 × 10⁻¹¹.
+  - **Two effects under-cover beyond chance:** cell 11 TNIE (179 of 200, p ≈ 0.001 if true coverage were 95%) and cell 08 TNIE (183 of 200, p ≈ 0.02).
+  - Both have skewed indirect-effect sampling distributions (skewness 0.57 and 1.42) and one-sided misses: in cell 11, the truth was above the interval 15 times and below it 6 times, with intervals about 9% narrower than ideal. This is the known weakness of the plain percentile bootstrap.
+  - Elsewhere the median interval width is 99% of ideal.
+- **Cost if this ruling is wrong:** Recording the failure rather than amending the gate could understate how well Mintmed performs. The per-cell tables and the feasibility calculation let readers judge that directly.
+- **Files:** `docs/validation/baseline_run1_results.md` (permanent record of run 1, including per-cell tables); this decision log. The raw artifacts are the GitHub artifact `aggregated-benchmark` from run `36296143027`, plus a git-ignored local copy.
+- **Follow-up:**
+  1. Test BC and BCa intervals on cells 11 and 08, checking both coverage and runtime cost.
+  2. If one is adopted as the correction, implement it with tests, rerun the matrix and report run 2 alongside run 1.
+  3. Record a feasible, pre-set coverage rule for any **future** validation plan; it will not be applied to this run.
+
 ## Reusable entry template
 
 ### Task NN — Name
