@@ -421,6 +421,9 @@ _FIXED_TRUTHS: dict[str, tuple[float, float, float]] = {
     # fitted, so the TNIE of 0.5 * 0.0 or 0.0 * 0.5 is estimated, not structural.
     "cell13_a_path_only_n100": (0.20, 0.20, 0.00),
     "cell14_b_path_only_n100": (0.20, 0.20, 0.00),
+    # Task 17 larger-N mixed-null cells: the same generators at N = 250.
+    "cell15_a_path_only_n250": (0.20, 0.20, 0.00),
+    "cell16_b_path_only_n250": (0.20, 0.20, 0.00),
 }
 
 
@@ -515,6 +518,9 @@ _CELL_REGISTRY = (
     # A -> M and M -> Y, so a false indirect effect is possible.
     ValidationCell("cell13_a_path_only_n100", 13, 100, "a_path_only", "continuous", population_outcome_sd=_outcome_sd("a_path_only")),
     ValidationCell("cell14_b_path_only_n100", 14, 100, "b_path_only", "continuous", population_outcome_sd=_outcome_sd("b_path_only")),
+    # Task 17 larger-N check of the mixed-null caveat: cells 13 and 14 at N = 250.
+    ValidationCell("cell15_a_path_only_n250", 15, 250, "a_path_only", "continuous", population_outcome_sd=_outcome_sd("a_path_only")),
+    ValidationCell("cell16_b_path_only_n250", 16, 250, "b_path_only", "continuous", population_outcome_sd=_outcome_sd("b_path_only")),
 )
 # Cells whose TNIE truth is zero; their TNIE feeds the null false zero-exclusion gate.
 NULL_TNIE_CELL_IDS: tuple[str, ...] = (
@@ -523,6 +529,8 @@ NULL_TNIE_CELL_IDS: tuple[str, ...] = (
     "cell05_no_mediation_n100",
     "cell13_a_path_only_n100",
     "cell14_b_path_only_n100",
+    "cell15_a_path_only_n250",
+    "cell16_b_path_only_n250",
 )
 _CELL_BY_ID = {cell.cell_id: cell for cell in _CELL_REGISTRY}
 if len(_CELL_BY_ID) != len(_CELL_REGISTRY) or {

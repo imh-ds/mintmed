@@ -37,7 +37,10 @@ ROOT = Path(__file__).parents[2]
 SMOKE = ROOT / "configs" / "mediation_validation_smoke.yaml"
 FULL = ROOT / "configs" / "mediation_validation.yaml"
 V2 = ROOT / "configs" / "mediation_validation_v2.yaml"
+V3 = ROOT / "configs" / "mediation_validation_v3.yaml"
 RUN1_CONFIG_HASH = "176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94"
+V2_CONFIG_HASH = "0f2f738887b2a1669cf8c281e43fb9c258652291a4c50bbed9a009ffaafb953b"
+V3_CONFIG_HASH = "e6dc06ede1b1332056f41208654c55e2d217f021a82fbaa227e749ada5a4faf3"
 
 
 def test_smoke_config_has_unique_combinations_and_locked_cells() -> None:
@@ -305,19 +308,35 @@ _ALL_CELL_IDS = (
     "cell12_mixed_binary_serial_n250",
     "cell13_a_path_only_n100",
     "cell14_b_path_only_n100",
+    "cell15_a_path_only_n250",
+    "cell16_b_path_only_n250",
 )
 _RUN1_CELL_IDS = _ALL_CELL_IDS[:12]
-_MIXED_NULL_CELL_IDS = ("cell13_a_path_only_n100", "cell14_b_path_only_n100")
+_V2_CELL_IDS = _ALL_CELL_IDS[:14]
+_MIXED_NULL_CELL_IDS = (
+    "cell13_a_path_only_n100",
+    "cell14_b_path_only_n100",
+    "cell15_a_path_only_n250",
+    "cell16_b_path_only_n250",
+)
+# Ordinal, sample size and generator of each mixed-null cell; cells 15 and 16
+# (Task 17) repeat cells 13 and 14 at N = 250.
+_MIXED_NULL_DESIGN = {
+    "cell13_a_path_only_n100": (13, 100, "a_path_only"),
+    "cell14_b_path_only_n100": (14, 100, "b_path_only"),
+    "cell15_a_path_only_n250": (15, 250, "a_path_only"),
+    "cell16_b_path_only_n250": (16, 250, "b_path_only"),
+}
 
 
-def test_registry_is_the_twelve_run1_cells_then_the_two_mixed_null_cells() -> None:
+def test_registry_is_the_run1_cells_then_the_mixed_null_cells() -> None:
     from mintmed.experiments.mediation_validation import _CELL_REGISTRY
 
     assert tuple(cell.cell_id for cell in _CELL_REGISTRY) == _ALL_CELL_IDS
-    assert tuple(cell.ordinal for cell in _CELL_REGISTRY) == tuple(range(1, 15))
+    assert tuple(cell.ordinal for cell in _CELL_REGISTRY) == tuple(range(1, 17))
     for cell_id in _MIXED_NULL_CELL_IDS:
         definition = cell_definition(cell_id)
-        assert definition.n == 100
+        assert (definition.ordinal, definition.n, definition.generator_name) == _MIXED_NULL_DESIGN[cell_id]
         assert definition.outcome_kind == "continuous"
         assert definition.metric_names == ("TE", "PNDE", "TNIE")
         assert definition.truth_method == "closed_form"
@@ -350,6 +369,8 @@ def test_outcome_kind_matches_the_generated_outcome_family(cell_id: str) -> None
         ("cell10_moderated_n150", 1.51771875),
         ("cell13_a_path_only_n100", 1.1),
         ("cell14_b_path_only_n100", 1.4625),
+        ("cell15_a_path_only_n250", 1.1),
+        ("cell16_b_path_only_n250", 1.4625),
     ],
 )
 def test_population_outcome_sd_matches_the_closed_form_variance(cell_id: str, variance: float) -> None:
@@ -376,6 +397,8 @@ def test_population_outcome_sd_matches_a_large_simulation_within_one_percent(cel
 _MIXED_NULL_COEFFICIENTS = {
     "cell13_a_path_only_n100": {"a": 0.5, "b": 0.0, "c": 0.2},
     "cell14_b_path_only_n100": {"a": 0.0, "b": 0.5, "c": 0.2},
+    "cell15_a_path_only_n250": {"a": 0.5, "b": 0.0, "c": 0.2},
+    "cell16_b_path_only_n250": {"a": 0.0, "b": 0.5, "c": 0.2},
 }
 
 
@@ -393,7 +416,12 @@ def test_mixed_null_truths_match_the_linear_closed_form(cell_id: str) -> None:
 
 @pytest.mark.parametrize(
     ("cell_id", "expected_sd"),
-    [("cell13_a_path_only_n100", 1.048809), ("cell14_b_path_only_n100", 1.209339)],
+    [
+        ("cell13_a_path_only_n100", 1.048809),
+        ("cell14_b_path_only_n100", 1.209339),
+        ("cell15_a_path_only_n250", 1.048809),
+        ("cell16_b_path_only_n250", 1.209339),
+    ],
 )
 def test_mixed_null_population_sd_matches_the_reduced_form(cell_id: str, expected_sd: float) -> None:
     a, b, c = (_MIXED_NULL_COEFFICIENTS[cell_id][key] for key in ("a", "b", "c"))
@@ -413,6 +441,7 @@ def test_mixed_null_cells_fit_both_paths_unlike_the_structural_null_cells(cell_i
 
     fixture = generate_cell(cell_id, 12345)
 
+    assert len(fixture.data) == cell_definition(cell_id).n
     assert node_terms(fixture, "M") == {"A", "C"}
     assert node_terms(fixture, "Y") == {"A", "M", "C"}
     assert {("A", "M"), ("M", "Y"), ("A", "Y")} <= set(fixture.spec.scientific.edges)
@@ -974,6 +1003,8 @@ def test_null_gate_covers_the_structural_and_mixed_null_tnie_cells() -> None:
         "cell05_no_mediation_n100",
         "cell13_a_path_only_n100",
         "cell14_b_path_only_n100",
+        "cell15_a_path_only_n250",
+        "cell16_b_path_only_n250",
     )
     assert all(cell_truth(cell_id)[2] == 0.0 for cell_id in NULL_TNIE_CELL_IDS)
 
@@ -1010,10 +1041,10 @@ def test_v2_config_is_the_fourteen_cell_coverage_revalidation_design() -> None:
     run1 = load_config(FULL)
 
     assert run1.config_hash == RUN1_CONFIG_HASH
-    assert config.config_hash != RUN1_CONFIG_HASH
+    assert config.config_hash == V2_CONFIG_HASH
     assert config.experiment == "mintmed_coverage_revalidation"
     assert config.master_seed == 20260927
-    assert config.cell_ids == _ALL_CELL_IDS
+    assert config.cell_ids == _V2_CELL_IDS
     assert config.cell_ids[:12] == run1.cell_ids
     assert config.replicates == 500
     assert expected_row_count(config) == 7_000
@@ -1053,6 +1084,79 @@ def test_v2_config_gates_38_coverage_effects_with_critical_count_458() -> None:
     raw, summary = _matrix_frames(small)
     gate = evaluate_gates(summary, raw, small)["gates"]["coverage_exact_binomial_bonferroni"]
     assert gate["gated_effects"] == 38
+    assert {(effect["cell_id"], effect["metric"]) for effect in gate["effects"]} == set(by_definition)
+
+    gates = dict(config.gates)
+    critical = coverage_critical_count(
+        config.replicates, gate["gated_effects"], gates["coverage_nominal"], gates["coverage_family_alpha"]
+    )
+    assert critical == 458
+
+
+# Task 17 (T17-S6): the comparator benchmark config is v2 plus cells 15 and 16.
+
+
+def test_v3_config_is_v2_plus_the_two_larger_n_mixed_null_cells() -> None:
+    config = load_config(V3)
+    v2 = load_config(V2)
+
+    assert load_config(FULL).config_hash == RUN1_CONFIG_HASH
+    assert v2.config_hash == V2_CONFIG_HASH
+    assert config.config_hash == V3_CONFIG_HASH
+    assert config.config_hash not in {RUN1_CONFIG_HASH, V2_CONFIG_HASH}
+    assert config.experiment == "mintmed_comparator_benchmark"
+    assert config.cell_ids == _ALL_CELL_IDS
+    assert config.cell_ids == (*v2.cell_ids, "cell15_a_path_only_n250", "cell16_b_path_only_n250")
+    assert len(config.cell_ids) == 16
+    assert expected_row_count(config) == 8_000
+    # Everything but the experiment name and the two appended cells matches v2,
+    # including the Option-B coverage keys and the stress block.
+    assert set(config.canonical_dict) == set(v2.canonical_dict)
+    differing = {key for key in config.canonical_dict if config.canonical_dict[key] != v2.canonical_dict[key]}
+    assert differing == {"experiment", "cell_ids"}
+    assert (config.master_seed, config.replicates) == (20260927, 500)
+    assert (config.bootstrap_replicates, config.bootstrap_mode) == (399, "standard")
+    assert dict(config.gates) == dict(v2.gates)
+    assert config.canonical_dict["stress"] == v2.canonical_dict["stress"]
+
+
+@pytest.mark.parametrize(
+    ("cell_id", "replicate"),
+    [("cell01_linear_n100", 0), ("cell04_no_m_to_y_n100", 137), ("cell14_b_path_only_n100", 499)],
+)
+def test_v3_regenerates_the_run2_datasets_for_the_v2_cells(cell_id: str, replicate: int) -> None:
+    v2, v3 = load_config(V2), load_config(V3)
+    ordinal = cell_definition(cell_id).ordinal
+
+    v2_seeds = seed_pair(v2.master_seed, ordinal, replicate)
+    v3_seeds = seed_pair(v3.master_seed, ordinal, replicate)
+    assert v2_seeds == v3_seeds
+    pd.testing.assert_frame_equal(
+        generate_cell(cell_id, v2_seeds[0]).data, generate_cell(cell_id, v3_seeds[0]).data, check_exact=True
+    )
+    assert set(expected_combinations(v2)) < set(expected_combinations(v3))
+
+
+def test_v3_config_gates_44_coverage_effects_with_critical_count_458() -> None:
+    from dataclasses import replace
+
+    from mintmed.experiments.mediation_validation_reporting import coverage_critical_count
+
+    config = load_config(V3)
+    by_definition = [
+        (cell_id, metric)
+        for cell_id in config.cell_ids
+        for metric in cell_definition(cell_id).metric_names
+        if not (cell_id == "cell10_moderated_n150" and metric in {"TNIE_W0", "TNIE_W1"})
+    ]
+    # The 38 v2 effects plus TE, PNDE and TNIE for each of cells 15 and 16.
+    assert sum(cell_id in _V2_CELL_IDS for cell_id, _ in by_definition) == 38
+    assert len(by_definition) == 44
+
+    small = replace(config, replicates=2)
+    raw, summary = _matrix_frames(small)
+    gate = evaluate_gates(summary, raw, small)["gates"]["coverage_exact_binomial_bonferroni"]
+    assert gate["gated_effects"] == 44
     assert {(effect["cell_id"], effect["metric"]) for effect in gate["effects"]} == set(by_definition)
 
     gates = dict(config.gates)
