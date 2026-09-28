@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "source": "outline/plan/task-17-comparator-benchmark.md stage1.support_matrix (owner confirmed 2026-09-28)",
+  "note": "Cells a tool cannot estimate are reported as not_estimable with the reason below; they are never imputed or dropped.",
+  "tools": {
+    "mediation": {
+      "supported": [
+        "cell01_linear_n100",
+        "cell02_linear_n250",
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100",
+        "cell08_quadratic_n100",
+        "cell09_spline_n250",
+        "cell10_moderated_n150",
+        "cell11_binary_mediator_n150",
+        "cell13_a_path_only_n100",
+        "cell14_b_path_only_n100",
+        "cell15_a_path_only_n250",
+        "cell16_b_path_only_n250"
+      ],
+      "not_estimable": {
+        "cell06_parallel_interaction_n150": "joint TNIE of two interacting parallel mediators is outside mediate()'s single-mediator design",
+        "cell07_serial_three_n200": "three serial mediators are outside mediate()'s single-mediator design",
+        "cell12_mixed_binary_serial_n250": "two serial mediators are outside mediate()'s single-mediator design"
+      }
+    },
+    "lavaan": {
+      "supported": [
+        "cell01_linear_n100",
+        "cell02_linear_n250",
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100",
+        "cell07_serial_three_n200",
+        "cell10_moderated_n150",
+        "cell13_a_path_only_n100",
+        "cell14_b_path_only_n100",
+        "cell15_a_path_only_n250",
+        "cell16_b_path_only_n250"
+      ],
+      "not_estimable": {
+        "cell06_parallel_interaction_n150": "outcome is nonlinear in the mediators (M1 x M2): natural effects are not path products",
+        "cell08_quadratic_n100": "outcome is nonlinear in M (M^2): natural effects are not path products",
+        "cell09_spline_n250": "outcome is nonlinear in M (natural spline): natural effects are not path products",
+        "cell11_binary_mediator_n150": "binary mediator: lavaan's probit latent-response effects are a different estimand",
+        "cell12_mixed_binary_serial_n250": "binary mediator and outcome: lavaan's probit latent-response effects are a different estimand"
+      }
+    }
+  }
+}
