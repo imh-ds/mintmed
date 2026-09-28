@@ -36,6 +36,33 @@ Snapshot URLs:
   the exact versions and that each package loads. It exits non-zero on any
   mismatch. `--check-only` runs the checks without downloading.
 - `versions.R` — prints R, the platform, the snapshot and the package versions as one JSON object, used to stamp comparator outputs.
+- `run_mediation.R`, `run_lavaan.R` — the comparator runners. Each reads an
+  export from `scripts/export_validation_datasets.py` (`--manifest DIR/manifest.json`)
+  and writes one long CSV row per mode × dataset × effect. `common.R` holds
+  their shared helpers (seed rule, formula builder, error capture, CSV writer).
+  The support matrix is `../support_matrix.json`. The fitted models and
+  estimand mapping are documented in `docs/validation/comparator_support.md`.
+
+## Run the comparators
+
+```sh
+python scripts/export_validation_datasets.py --config configs/mediation_validation_v3.yaml --output OUT --cell-id cell01_linear_n100 --replicate-stop 2
+Rscript benchmarks/comparators/r/run_mediation.R --manifest OUT/manifest.json --output mediation.csv
+Rscript benchmarks/comparators/r/run_lavaan.R --manifest OUT/manifest.json --output lavaan.csv
+```
+
+The shardable wrapper does both steps and writes `raw_metrics.csv`:
+
+```sh
+python -m mintmed.experiments.comparator_benchmark --config configs/mediation_validation_v3.yaml \
+    --output OUT --cell-id cell01_linear_n100 --replicate-block 0of4 [--tool mediation|lavaan|all]
+```
+
+In `sharded_benchmark.yml`, dispatch it with:
+
+- `runner_module = mintmed.experiments.comparator_benchmark`;
+- `with_r = "true"`;
+- `--cell-id` and `--replicate-block` as the two shard dimensions.
 
 ## Install locally
 
