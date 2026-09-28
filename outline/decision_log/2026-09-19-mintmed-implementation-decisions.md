@@ -1069,6 +1069,43 @@ Each task entry should record:
 - **Also notable:** run 1's TNIE undercoverage in cells 08 and 11 did not replicate at 500 datasets: 473/500 (94.6%) and 470/500 (94.0%). Cell 08's misses are still one-sided (24 above / 3 below).
 - **Next:** under the charter's one-correction rule, the owner decides whether to make one targeted correction with a rerun of the affected cell, or to document the limitation. Run 2's result is recorded as failed either way.
 
+### Task 16 — outcome: null-gate limitation documented (option 2)
+
+- **Date:** 2026-09-27
+- **Task:** Task 16, step T16-S9 — Publish.
+- **Status:** Completed as a documented failure. Run 2 stands as **FAILED** on the null false zero-exclusion gate; no correction was adopted and no rerun was made.
+- **Schedule:** On schedule (due 2026-10-04).
+- **Decision:** The owner chose **option 2**:
+  - no interval fix is adopted, and the charter's one correction is not used;
+  - Mintmed keeps the percentile participant-bootstrap interval;
+  - the mixed-null false-positive rate is documented as a known limitation: where A → M is truly zero and M → Y is strong, at N = 100, the TNIE false-positive rate is about 6–8% instead of 5%.
+- **Rationale:** Three candidate intervals were compared with the percentile interval, from the same 399 replicates, on cells 01, 13 and 14 with the run-2 seed (20260927) and on cells 01, 08, 13 and 14 with a fresh seed (20260928), 500 datasets each. Cell 14 TNIE false positives (run-2 seed / fresh seed):
+  - percentile 39 / 32; pooled 71 of 1,000 = 7.1% (Wilson 95% 5.7–8.9%). The fresh seed alone would have passed the gate (Wilson upper 0.089);
+  - expanded percentile 37 / 31. About 2% wider, and almost no change;
+  - t × bootstrap SD 20 / 16, but TNIE power fell from 227 to 88 of 500 in cell 08 (fresh seed) and from 68–69% to 56–57% in cell 01;
+  - BC 44 / 41. Worse, and cell 13's false positives rose from 22 to 40.
+
+  None is a targeted fix: each either leaves the rate where it is, costs a large loss of power in ordinary designs, or makes it worse. The excess is real (pooled rate above 5%) but modest, and close to the gate's threshold.
+- **Tournament note:** Comparing several candidate intervals sits uneasily with the charter's "no estimator tournament" rule. Adopting none keeps within it: the run-2 verdict was not chosen by the comparison and still stands as failed.
+- **Actions:**
+  - Wrote `docs/validation/coverage_revalidation_results.md`, the permanent run-2 record.
+  - Wrote `docs/validation/null_gate_fix_check.md`, the record of the fix check and this decision.
+  - Added a run-2 section to `docs/validation/baseline_evidence.md`, with run 1's sections unchanged. Revised its known limitations: the skewed-TNIE undercoverage was not confirmed in run 2 (cell 08 TNIE 473/500, cell 11 TNIE 470/500), and the mixed-null false-positive limitation was added.
+  - Updated the README status and `docs/user-guide.md` to match both runs.
+- **Evidence:**
+  - Run 2 (`36349731184`, commit `9ff5de6`): 7,000 of 7,000 rows, one configuration hash. Gates re-derived from the raw rows with `expand_metrics`, `summarize_metrics` and `evaluate_gates`; they agree with `summary.json`.
+  - Coverage gate passed (k = 38, critical count 458; minimum 461 of 500). Null gate failed (cell 14 TNIE 39/500, Wilson upper 0.1049). Worst continuous bias 0.0108 SD, binary bias 0.0026.
+  - Fix check: `scripts/compare_interval_fixes.py`; row-level output in git-ignored `results/generated/interval-fix-experiment/`. The run-2-seed percentile intervals reproduce run 2 to within 3 × 10⁻¹⁵.
+- **Cost if this ruling is wrong:** users of mixed-null designs at N around 100 see a false indirect effect about 6–8% of the time rather than 5%. The limitation is stated in the README, the user guide and the evidence report.
+- **Files:**
+  - `docs/validation/coverage_revalidation_results.md`
+  - `docs/validation/null_gate_fix_check.md`
+  - `docs/validation/baseline_evidence.md`
+  - `docs/user-guide.md`
+  - `README.md`
+  - this decision log
+- **Follow-up** (not Task 16): check the mixed-null false-positive rate at larger N; research intervals designed for products of coefficients. Either is a new feature with its own pre-registered validation, not a rerun of run 2.
+
 ## Reusable entry template
 
 ### Task NN — Name
