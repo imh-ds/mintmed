@@ -1106,6 +1106,33 @@ Each task entry should record:
   - this decision log
 - **Follow-up** (not Task 16): check the mixed-null false-positive rate at larger N; research intervals designed for products of coefficients. Either is a new feature with its own pre-registered validation, not a rerun of run 2.
 
+### Task 17 — comparator benchmark scoped (R mediation and lavaan path models)
+
+- **Date:** 2026-09-28
+- **Task:** Task 17 — Benchmark Mintmed against established methods, then under misspecification.
+- **Status:** Planned.
+- **Decision:** The owner chose to benchmark Mintmed against two R tools:
+  - R `mediation::mediate()`;
+  - lavaan used purely as an observed-variable path model, with no latent variables.
+
+  The study is combined, with two stages under their own pre-registered charters:
+  1. head-to-head on correctly specified models, reusing the run-2 datasets, plus larger-N (N = 250) mixed-null cells;
+  2. robustness when every method fits the same wrong model.
+- **Rationale:**
+  - A misspecification test is only informative comparatively, because every method degrades when the model is wrong.
+  - The Stage 1 comparison is cheap because the run-2 datasets can be regenerated exactly from their seeds.
+  - Stage 1 also shows whether the standard tools share run 2's mixed-null false-positive excess.
+  - The real R packages are more credible than Python re-implementations.
+- **Constraints:**
+  - Each comparator uses its percentile-bootstrap mode with 399 resamples to match Mintmed. Its default mode is reported descriptively.
+  - Designs a tool cannot estimate are reported as not estimable, never forced.
+  - Mintmed's estimator is unchanged, and runs 1 and 2 are not re-graded.
+- **Files:** `outline/plan/task-17-comparator-benchmark.md` (machine-readable plan, steps T17-S1 to T17-S12).
+- **Open:**
+  - owner approval to download `mediation` and pinned packages from CRAN;
+  - the due date;
+  - the non-inferiority margins (draft: 2 percentage points for coverage and false positives, 0.02 SD for bias).
+
 ## Reusable entry template
 
 ### Task NN — Name
