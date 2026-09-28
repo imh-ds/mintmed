@@ -1,0 +1,905 @@
+{
+  "cases": [
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell01_linear_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 182398976,
+      "median_cpu_seconds": 8.047406541,
+      "median_wall_seconds": 7.941732831499998,
+      "n": 100,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 1517040108547190271,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell01_linear_n100",
+          "config_hash": "523d138dd67e3ab51224ed68a73a1071628cbe13d4f2d43d347d683143b1b6e0",
+          "cpu_seconds": 8.019079366,
+          "data_seed": 9749156801862218311,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182243328,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 7.912976800999999
+        },
+        {
+          "analysis_seed": 1517040108547190271,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell01_linear_n100",
+          "config_hash": "523d138dd67e3ab51224ed68a73a1071628cbe13d4f2d43d347d683143b1b6e0",
+          "cpu_seconds": 8.075733716,
+          "data_seed": 9749156801862218311,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182398976,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 7.970488861999996
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell02_linear_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 183992320,
+      "median_cpu_seconds": 8.464054125,
+      "median_wall_seconds": 8.358141776499998,
+      "n": 250,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 12211192867706340728,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell02_linear_n250",
+          "config_hash": "edf4278c525ea984ff4e4d2224d11f9703912a7379042b33441addac83228c7a",
+          "cpu_seconds": 8.477376759,
+          "data_seed": 18393521947888680065,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183992320,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 8.371376487999996
+        },
+        {
+          "analysis_seed": 12211192867706340728,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell02_linear_n250",
+          "config_hash": "edf4278c525ea984ff4e4d2224d11f9703912a7379042b33441addac83228c7a",
+          "cpu_seconds": 8.450731491,
+          "data_seed": 18393521947888680065,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183730176,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 8.344907065000001
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell03_no_a_to_m_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 182239232,
+      "median_cpu_seconds": 7.248705128999999,
+      "median_wall_seconds": 7.1425251,
+      "n": 100,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 15133914886608369514,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell03_no_a_to_m_n100",
+          "config_hash": "8b92d534863c7c68b2805e6a57fa200dc39765fcf1fb49807594522ecc4c70aa",
+          "cpu_seconds": 7.259984855,
+          "data_seed": 17321050859608148715,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182153216,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 7.1536107600000065
+        },
+        {
+          "analysis_seed": 15133914886608369514,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell03_no_a_to_m_n100",
+          "config_hash": "8b92d534863c7c68b2805e6a57fa200dc39765fcf1fb49807594522ecc4c70aa",
+          "cpu_seconds": 7.237425403,
+          "data_seed": 17321050859608148715,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182239232,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 7.131439439999994
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell04_no_m_to_y_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 182415360,
+      "median_cpu_seconds": 7.4140301035,
+      "median_wall_seconds": 7.308381211000004,
+      "n": 100,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 5175627949949465589,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell04_no_m_to_y_n100",
+          "config_hash": "41960ba0fd5bf2140cb93dd8ea706b496f1a74f93da6fa978519041cdd68e6ac",
+          "cpu_seconds": 7.443558063999999,
+          "data_seed": 11474411268886545291,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182415360,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 7.338178701999993
+        },
+        {
+          "analysis_seed": 5175627949949465589,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell04_no_m_to_y_n100",
+          "config_hash": "41960ba0fd5bf2140cb93dd8ea706b496f1a74f93da6fa978519041cdd68e6ac",
+          "cpu_seconds": 7.384502143000001,
+          "data_seed": 11474411268886545291,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182104064,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 7.2785837200000145
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell05_no_mediation_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 182300672,
+      "median_cpu_seconds": 7.4369634625,
+      "median_wall_seconds": 7.3309480000000065,
+      "n": 100,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 11884282232124138068,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell05_no_mediation_n100",
+          "config_hash": "04c05b8b11c632935f9a57fb08529995f2daa3bbbc608e6ad0d4cc9641d6f212",
+          "cpu_seconds": 7.394470564,
+          "data_seed": 606836414183506420,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 181760000,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 7.288271522000002
+        },
+        {
+          "analysis_seed": 11884282232124138068,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell05_no_mediation_n100",
+          "config_hash": "04c05b8b11c632935f9a57fb08529995f2daa3bbbc608e6ad0d4cc9641d6f212",
+          "cpu_seconds": 7.479456361,
+          "data_seed": 606836414183506420,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 182300672,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 7.373624478000011
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete_with_warnings"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell06_parallel_interaction_n150",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 203509760,
+      "median_cpu_seconds": 60.47531972350001,
+      "median_wall_seconds": 30.442520414499995,
+      "n": 150,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 4714256512987312338,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell06_parallel_interaction_n150",
+          "config_hash": "93a1bf302649cbd49296c913763c57fa4883395108e511f74bc8006b700a4aea",
+          "cpu_seconds": 60.698822099000004,
+          "data_seed": 13389059334210583280,
+          "draw_budget": 512,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "sobol_blocked",
+          "n": 150,
+          "peak_rss_bytes": 203198464,
+          "point_fit_count": 3,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 30.565068725000003
+        },
+        {
+          "analysis_seed": 4714256512987312338,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell06_parallel_interaction_n150",
+          "config_hash": "93a1bf302649cbd49296c913763c57fa4883395108e511f74bc8006b700a4aea",
+          "cpu_seconds": 60.251817348,
+          "data_seed": 13389059334210583280,
+          "draw_budget": 512,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "sobol_blocked",
+          "n": 150,
+          "peak_rss_bytes": 203509760,
+          "point_fit_count": 3,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 30.319972103999987
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete_with_warnings"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell07_serial_three_n200",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 183496704,
+      "median_cpu_seconds": 13.981220931500001,
+      "median_wall_seconds": 13.877694969499998,
+      "n": 200,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 15914468360558903424,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell07_serial_three_n200",
+          "config_hash": "57c1dd60bb3dcac8da2606fa6b107d1d48b2a9b4eff98098041e9f69192c315c",
+          "cpu_seconds": 14.026128148,
+          "data_seed": 10285833840680880939,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 200,
+          "peak_rss_bytes": 183353344,
+          "point_fit_count": 4,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 13.921648627999986
+        },
+        {
+          "analysis_seed": 15914468360558903424,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell07_serial_three_n200",
+          "config_hash": "57c1dd60bb3dcac8da2606fa6b107d1d48b2a9b4eff98098041e9f69192c315c",
+          "cpu_seconds": 13.936313715,
+          "data_seed": 10285833840680880939,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gaussian_linear_exact",
+          "n": 200,
+          "peak_rss_bytes": 183496704,
+          "point_fit_count": 4,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 13.833741311000011
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell08_quadratic_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 184201216,
+      "median_cpu_seconds": 34.248082834499996,
+      "median_wall_seconds": 17.245441896999992,
+      "n": 100,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 555564373055847375,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell08_quadratic_n100",
+          "config_hash": "6615e7292646839d53b477015073e68101023bdfe90463acbffcd5dfe2d197b1",
+          "cpu_seconds": 34.268332641,
+          "data_seed": 18080853810247874549,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 100,
+          "peak_rss_bytes": 184201216,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 17.257489557000014
+        },
+        {
+          "analysis_seed": 555564373055847375,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell08_quadratic_n100",
+          "config_hash": "6615e7292646839d53b477015073e68101023bdfe90463acbffcd5dfe2d197b1",
+          "cpu_seconds": 34.227833028,
+          "data_seed": 18080853810247874549,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 100,
+          "peak_rss_bytes": 184041472,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 17.23339423699997
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell09_spline_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 201662464,
+      "median_cpu_seconds": 48.364718537499996,
+      "median_wall_seconds": 24.460864268999984,
+      "n": 250,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 11183948589764991061,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell09_spline_n250",
+          "config_hash": "ea963806b17ee99a234da8f79671df8950d08a6749f5c98a4748e45f38904804",
+          "cpu_seconds": 48.907990171,
+          "data_seed": 7239412666220895527,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 250,
+          "peak_rss_bytes": 201662464,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 24.729093782000007
+        },
+        {
+          "analysis_seed": 11183948589764991061,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell09_spline_n250",
+          "config_hash": "ea963806b17ee99a234da8f79671df8950d08a6749f5c98a4748e45f38904804",
+          "cpu_seconds": 47.821446904,
+          "data_seed": 7239412666220895527,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 250,
+          "peak_rss_bytes": 201658368,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 24.19263475599996
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell10_moderated_n150",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 202285056,
+      "median_cpu_seconds": 165.2689834945,
+      "median_wall_seconds": 82.88007957150003,
+      "n": 150,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 14166730222897804110,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell10_moderated_n150",
+          "config_hash": "62ccf6c5ec1f95512e50c0953950136cfc4219b759f2161b1a98715dadef42a3",
+          "cpu_seconds": 164.59338157899998,
+          "data_seed": 3206292282688137912,
+          "draw_budget": 512,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "sobol_blocked",
+          "n": 150,
+          "peak_rss_bytes": 202096640,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 82.54153301600002
+        },
+        {
+          "analysis_seed": 14166730222897804110,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell10_moderated_n150",
+          "config_hash": "62ccf6c5ec1f95512e50c0953950136cfc4219b759f2161b1a98715dadef42a3",
+          "cpu_seconds": 165.94458541,
+          "data_seed": 3206292282688137912,
+          "draw_budget": 512,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "sobol_blocked",
+          "n": 150,
+          "peak_rss_bytes": 202285056,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 83.21862612700005
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell11_binary_mediator_n150",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 182988800,
+      "median_cpu_seconds": 20.583072227499997,
+      "median_wall_seconds": 10.482583463499992,
+      "n": 150,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 7041204320721805569,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell11_binary_mediator_n150",
+          "config_hash": "b89f986cc3dadd2214c57333cd384dbbefd5e21f7396dd51d42478d444f5ae79",
+          "cpu_seconds": 20.763967725999997,
+          "data_seed": 14738987893767480280,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "exact_binary_mediators",
+          "n": 150,
+          "peak_rss_bytes": 182697984,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 10.574844907
+        },
+        {
+          "analysis_seed": 7041204320721805569,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell11_binary_mediator_n150",
+          "config_hash": "b89f986cc3dadd2214c57333cd384dbbefd5e21f7396dd51d42478d444f5ae79",
+          "cpu_seconds": 20.402176729,
+          "data_seed": 14738987893767480280,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "exact_binary_mediators",
+          "n": 150,
+          "peak_rss_bytes": 182988800,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 10.390322019999985
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete_with_warnings"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell12_mixed_binary_serial_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 195809280,
+      "median_cpu_seconds": 29.2957980005,
+      "median_wall_seconds": 14.918847443999994,
+      "n": 250,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 782119402276928458,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell12_mixed_binary_serial_n250",
+          "config_hash": "f1eaf561b93c135ba76b599157ec1b2e29cd9ccc03030f18459505708aee591b",
+          "cpu_seconds": 29.09500098,
+          "data_seed": 9102382603507042662,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 250,
+          "peak_rss_bytes": 195809280,
+          "point_fit_count": 3,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 14.818389283999977
+        },
+        {
+          "analysis_seed": 782119402276928458,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell12_mixed_binary_serial_n250",
+          "config_hash": "f1eaf561b93c135ba76b599157ec1b2e29cd9ccc03030f18459505708aee591b",
+          "cpu_seconds": 29.496595021,
+          "data_seed": 9102382603507042662,
+          "draw_budget": 0,
+          "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+          "integration_method": "gauss_hermite",
+          "n": 250,
+          "peak_rss_bytes": 195809280,
+          "point_fit_count": 3,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 15.01930560400001
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    }
+  ],
+  "environment": {
+    "mintmed": "0.1.0",
+    "numpy": "2.4.6",
+    "pandas": "3.0.6",
+    "patsy": "1.0.3",
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "3.11.16",
+    "scipy": "1.17.1",
+    "statsmodels": "0.14.6"
+  },
+  "experiment": "mintmed_task14_runtime_pilot",
+  "forecast": {
+    "base_cpu_seconds": 82165.6710221,
+    "budget_pass": false,
+    "ceiling_cpu_hours": 12.0,
+    "datasets_per_cell": 200,
+    "integration_methods": {
+      "cell01_linear_n100": [
+        "gaussian_linear_exact"
+      ],
+      "cell02_linear_n250": [
+        "gaussian_linear_exact"
+      ],
+      "cell03_no_a_to_m_n100": [
+        "gaussian_linear_exact"
+      ],
+      "cell04_no_m_to_y_n100": [
+        "gaussian_linear_exact"
+      ],
+      "cell05_no_mediation_n100": [
+        "gaussian_linear_exact"
+      ],
+      "cell06_parallel_interaction_n150": [
+        "sobol_blocked"
+      ],
+      "cell07_serial_three_n200": [
+        "gaussian_linear_exact"
+      ],
+      "cell08_quadratic_n100": [
+        "gauss_hermite"
+      ],
+      "cell09_spline_n250": [
+        "gauss_hermite"
+      ],
+      "cell10_moderated_n150": [
+        "sobol_blocked"
+      ],
+      "cell11_binary_mediator_n150": [
+        "exact_binary_mediators"
+      ],
+      "cell12_mixed_binary_serial_n250": [
+        "gauss_hermite"
+      ]
+    },
+    "matrix_bootstrap_refits": 957600,
+    "matrix_complete_analyses": 960000,
+    "matrix_point_fits": 2400,
+    "median_cpu_seconds_by_proxy": {
+      "cell01_linear_n100": 8.047406541,
+      "cell02_linear_n250": 8.464054125,
+      "cell03_no_a_to_m_n100": 7.248705128999999,
+      "cell04_no_m_to_y_n100": 7.4140301035,
+      "cell05_no_mediation_n100": 7.4369634625,
+      "cell06_parallel_interaction_n150": 60.47531972350001,
+      "cell07_serial_three_n200": 13.981220931500001,
+      "cell08_quadratic_n100": 34.248082834499996,
+      "cell09_spline_n250": 48.364718537499996,
+      "cell10_moderated_n150": 165.2689834945,
+      "cell11_binary_mediator_n150": 20.583072227499997,
+      "cell12_mixed_binary_serial_n250": 29.2957980005
+    },
+    "projected_cpu_hours": 23.964987381445834,
+    "projected_cpu_seconds": 86273.954573205,
+    "proxy_cpu_seconds": {
+      "cell01_linear_n100": 8.047406541,
+      "cell02_linear_n250": 8.464054125,
+      "cell03_no_a_to_m_n100": 7.248705128999999,
+      "cell04_no_m_to_y_n100": 7.4140301035,
+      "cell05_no_mediation_n100": 7.4369634625,
+      "cell06_parallel_interaction_n150": 60.47531972350001,
+      "cell07_serial_three_n200": 13.981220931500001,
+      "cell08_quadratic_n100": 34.248082834499996,
+      "cell09_spline_n250": 48.364718537499996,
+      "cell10_moderated_n150": 165.2689834945,
+      "cell11_binary_mediator_n150": 20.583072227499997,
+      "cell12_mixed_binary_serial_n250": 29.2957980005
+    },
+    "proxy_map": {
+      "cell01_linear_n100": [
+        "cell01_linear_n100"
+      ],
+      "cell02_linear_n250": [
+        "cell02_linear_n250"
+      ],
+      "cell03_no_a_to_m_n100": [
+        "cell03_no_a_to_m_n100"
+      ],
+      "cell04_no_m_to_y_n100": [
+        "cell04_no_m_to_y_n100"
+      ],
+      "cell05_no_mediation_n100": [
+        "cell05_no_mediation_n100"
+      ],
+      "cell06_parallel_interaction_n150": [
+        "cell06_parallel_interaction_n150"
+      ],
+      "cell07_serial_three_n200": [
+        "cell07_serial_three_n200"
+      ],
+      "cell08_quadratic_n100": [
+        "cell08_quadratic_n100"
+      ],
+      "cell09_spline_n250": [
+        "cell09_spline_n250"
+      ],
+      "cell10_moderated_n150": [
+        "cell10_moderated_n150"
+      ],
+      "cell11_binary_mediator_n150": [
+        "cell11_binary_mediator_n150"
+      ],
+      "cell12_mixed_binary_serial_n250": [
+        "cell12_mixed_binary_serial_n250"
+      ]
+    },
+    "rerun_fraction": 0.05,
+    "status": "over_budget"
+  },
+  "git_commit": "e93368a5ea03d3f9fd1b5179adbf1175397ffe85",
+  "pilot_settings": {
+    "bootstrap_replicates": 399,
+    "ceiling_cpu_hours": 12.0,
+    "cell_ids": [
+      "cell01_linear_n100",
+      "cell02_linear_n250",
+      "cell03_no_a_to_m_n100",
+      "cell04_no_m_to_y_n100",
+      "cell05_no_mediation_n100",
+      "cell06_parallel_interaction_n150",
+      "cell07_serial_three_n200",
+      "cell08_quadratic_n100",
+      "cell09_spline_n250",
+      "cell10_moderated_n150",
+      "cell11_binary_mediator_n150",
+      "cell12_mixed_binary_serial_n250"
+    ],
+    "integration_draws": 256,
+    "integration_tolerance": 0.001,
+    "repeats": 2,
+    "rerun_fraction": 0.05
+  },
+  "runtime_supported": true,
+  "schema_version": 1,
+  "source_config": "configs/mediation_validation.yaml",
+  "source_config_hash": "176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94",
+  "status": "over_budget",
+  "supported_python": ">=3.11,<3.12"
+}
