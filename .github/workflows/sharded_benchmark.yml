@@ -35,6 +35,10 @@ on:
         description: "Comma-separated values for the optional third shard dimension"
         required: false
         default: ""
+      with_r:
+        description: "Set up R 4.6 and the pinned comparator packages in each shard (\"true\" or \"false\")"
+        required: false
+        default: "false"
 
 jobs:
   plan:
@@ -88,6 +92,32 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e .
+      # Optional R comparator environment (Task 17). Every R step is gated on
+      # with_r == 'true', so the default dispatch runs exactly the steps and
+      # command it ran before. The library is cached per install-script and
+      # pin hash, R minor and Ubuntu codename so shards restore it instead of
+      # each downloading it; install_packages.R skips packages already at
+      # their pins and always re-asserts versions.
+      - if: ${{ inputs.with_r == 'true' }}
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.6"
+          use-public-rspm: true
+      - if: ${{ inputs.with_r == 'true' }}
+        id: r-env
+        run: |
+          echo "codename=$(. /etc/os-release && echo "$VERSION_CODENAME")" >> "$GITHUB_OUTPUT"
+          echo "R_COMPARATOR_LIB=$RUNNER_TEMP/r-comparator-lib" >> "$GITHUB_ENV"
+          echo "R_LIBS=$RUNNER_TEMP/r-comparator-lib" >> "$GITHUB_ENV"
+      - if: ${{ inputs.with_r == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/r-comparator-lib
+          key: r-comparator-lib-${{ runner.os }}-${{ steps.r-env.outputs.codename }}-r4.6-${{ hashFiles('benchmarks/comparators/r/install_packages.R', 'benchmarks/comparators/r/pins.R') }}
+      - if: ${{ inputs.with_r == 'true' }}
+        run: |
+          Rscript benchmarks/comparators/r/install_packages.R
+          Rscript benchmarks/comparators/r/versions.R
       - env:
           RUNNER_MODULE: ${{ inputs.runner_module }}
           CONFIG: ${{ inputs.config }}

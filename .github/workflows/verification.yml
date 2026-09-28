@@ -61,6 +61,38 @@ jobs:
       - name: Run full test suite
         run: python -m pytest -q
 
+  r-comparators-env:
+    # Task 17: install the pinned R comparator packages from the dated PPM
+    # snapshot in benchmarks/comparators/r/pins.R and record their versions.
+    # Independent of the Python jobs; nothing else depends on it. The cache
+    # path and key match sharded_benchmark.yml's with_r steps, so a push to a
+    # branch warms the library that a later dispatch's shards restore. Any
+    # change to the pins or install script changes the key and forces a fresh
+    # install from the snapshot.
+    name: R comparator environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.6"
+          use-public-rspm: true
+      - id: r-env
+        name: Locate comparator R library
+        run: |
+          echo "codename=$(. /etc/os-release && echo "$VERSION_CODENAME")" >> "$GITHUB_OUTPUT"
+          echo "R_COMPARATOR_LIB=$RUNNER_TEMP/r-comparator-lib" >> "$GITHUB_ENV"
+          echo "R_LIBS=$RUNNER_TEMP/r-comparator-lib" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/r-comparator-lib
+          key: r-comparator-lib-${{ runner.os }}-${{ steps.r-env.outputs.codename }}-r4.6-${{ hashFiles('benchmarks/comparators/r/install_packages.R', 'benchmarks/comparators/r/pins.R') }}
+      - name: Install pinned R comparator packages
+        run: Rscript benchmarks/comparators/r/install_packages.R
+      - name: Record R comparator versions
+        run: Rscript benchmarks/comparators/r/versions.R
+
   cli-and-validation:
     name: CLI examples and validation smoke
     runs-on: ubuntu-latest
