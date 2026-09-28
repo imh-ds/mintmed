@@ -12,6 +12,10 @@ Mintmed was checked in two pre-registered simulation runs on 14 fixed designs ([
   - the coverage check **passed**: no effect under-covered, and average coverage was 94.9%;
   - the check for false indirect effects **failed**. When the exposure → mediator path is truly zero but included in the model, and the mediator → outcome path is strong, the indirect-effect interval excluded zero in 7.8% of datasets at N = 100 (about 6–8% across repeats) instead of 5%.
   - Run 1's apparent undercoverage of indirect effects with a quadratic outcome or a binary mediator did not replicate.
+- **What the failed check means in practice:** it is a real but mild caveat, not a reason to avoid Mintmed.
+  - It adds about 2 extra false positives per 100 analyses, and only in that one kind of design.
+  - Estimates and interval coverage were unaffected.
+  - Treat a borderline indirect effect with extra caution when the exposure → mediator path is itself weak. See [Known limitations](docs/validation/baseline_evidence.md#known-limitations).
 - **Other designs:** untested and not validated. This includes four mediators, continuous exposures or moderators, samples below 100, and any misspecified model.
 
 Mintmed does not test causal identification assumptions. By default its effects are model-standardized contrasts, not causal effects.
@@ -47,3 +51,4 @@ py -3.11 -m venv .venv
 | [`coverage_revalidation_results.md`](docs/validation/coverage_revalidation_results.md) | The permanent record of run 2 (null false-positive gate failed) |
 | [`null_gate_fix_check.md`](docs/validation/null_gate_fix_check.md) | The candidate fixes after run 2, and why none was adopted |
 | [`baseline_evidence.md`](docs/validation/baseline_evidence.md) | The evidence summary across both runs, supported designs and known limitations |
+| [`benchmarks/benchmark_log.md`](benchmarks/benchmark_log.md) | The running log of every benchmark run, with archived summaries and artifact fingerprints |

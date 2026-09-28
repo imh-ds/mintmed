@@ -93,6 +93,14 @@ When the A → M path is truly zero but included in the model, and the M → Y p
 
 **What to do:** in designs of this kind at N around 100, read a TNIE interval that excludes zero knowing that the false-positive rate is about 6–8%, not 5%. Whether the excess shrinks at larger N has not been checked.
 
+**How serious is this?** It is a genuine limitation: the pre-registered gate failed, and the result stands. It is not a detrimental one, for four reasons:
+- **Size.** 7.1% against 5% is about 2 extra false positives per 100 analyses. The gate failed by a small margin: the Wilson upper bound was 0.1049 against a limit of 0.10, and a fresh-seed repeat gave 0.089, which would have passed.
+- **Scope.** It appears only when the A → M path is truly zero while M → Y is strong. The reverse case (cell 13) was on target, and cells 03–05 had no false positives.
+- **No spill-over.** Point estimates were unbiased in all 14 cells. All 38 gated effects passed the run-2 coverage gate, including cell 14's TE and PNDE.
+- **Not specific to Mintmed as far as is known.** The methods literature documents inflated false-positive rates for bootstrap tests of indirect effects when one path is zero and the other is large, most strongly for bias-corrected intervals (Fritz, Taylor & MacKinnon, 2012, *Multivariate Behavioral Research* 47:61–87). That matches the BC result in [`null_gate_fix_check.md`](null_gate_fix_check.md). Other software has not yet been run on these datasets, so it is untested whether Mintmed matches established tools exactly.
+
+What it does mean is that a borderline "significant" indirect effect deserves extra caution when the A → M path is itself weak.
+
 ### Skewed indirect effects: not confirmed in run 2
 
 Run 1 found that the TNIE interval under-covered with a quadratic outcome (cell 08, 183 of 200) and a binary mediator (cell 11, 179 of 200), with misses mostly on one side. Run 2, with 500 new datasets per cell, **did not confirm** this:

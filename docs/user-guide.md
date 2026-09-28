@@ -153,6 +153,13 @@ Intervals come from a participant bootstrap. Every node is refitted on each resa
 
 So in designs like this, about 6–8% of truly null indirect effects will look significant, not 5%. Of the alternative intervals checked, only one reduced the rate, and it cost a large loss of power in ordinary designs, so Mintmed keeps the percentile interval. Larger samples have not been checked. Details are in [`validation/baseline_evidence.md`](validation/baseline_evidence.md#known-limitations).
 
+**How serious is it?** It is real, but it is not a reason to avoid Mintmed:
+- the excess is about 2 extra false positives per 100 analyses, and only in this one kind of design;
+- estimates and coverage were unaffected;
+- designs with real paths behave normally.
+
+In practice, be cautious with a borderline indirect effect when the exposure → mediator path is itself weak. Look at that path directly, and prefer larger samples.
+
 **Skewed indirect effects.** Run 1 suggested that TNIE intervals under-cover with a quadratic outcome or a binary mediator (91.5% and 89.5%). Run 2, with 500 datasets per design, did not confirm this (94.6% and 94.0%). With the quadratic outcome, the misses still fell mostly on one side: when the interval missed, it usually lay below the true indirect effect.
 
 `analysis.json` and the report record two state fields alongside `overall_status`:
