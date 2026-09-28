@@ -2,10 +2,11 @@
 
 Mintmed estimates natural direct and indirect effects for **observed-variable** mediation models. You declare every node model explicitly, and Mintmed evaluates the effects with a model-standardized g-formula. This guide explains how to run an analysis and how to read its results.
 
-> **Research beta.** Mintmed was checked only on the 12 simulation designs in [`validation/baseline_evidence.md`](validation/baseline_evidence.md), which are fixed by [`validation/baseline_release_charter.md`](validation/baseline_release_charter.md).
-> - In those designs, the point estimates were essentially unbiased.
-> - The **pre-registered interval coverage check failed.** Coverage averaged 94.8%, but indirect-effect intervals under-covered in two designs: a quadratic outcome and a binary mediator. See [Uncertainty](#uncertainty).
-> - Designs outside the 12 run, but are **not validated**. See [What Mintmed does not do](#what-mintmed-does-not-do).
+> **Research beta.** Mintmed was checked only on the 14 simulation designs in [`validation/baseline_evidence.md`](validation/baseline_evidence.md), in two pre-registered runs fixed by [`validation/baseline_release_charter.md`](validation/baseline_release_charter.md) and [`validation/coverage_revalidation_charter.md`](validation/coverage_revalidation_charter.md). **Neither run fully passed.**
+> - In all 14 designs, the point estimates were essentially unbiased.
+> - **Run 1** failed its interval coverage check. Coverage averaged 94.8%, but the check was nearly impossible to pass at 200 datasets per design.
+> - **Run 2** (500 datasets per design) passed its coverage check, with coverage averaging 94.9%, but **failed its check for false indirect effects**: in one mixed-null design, indirect-effect intervals excluded zero too often. See [Uncertainty](#uncertainty).
+> - Designs outside the 14 run, but are **not validated**. See [What Mintmed does not do](#what-mintmed-does-not-do).
 
 ## Installation
 
@@ -146,11 +147,13 @@ Intervals come from a participant bootstrap. Every node is refitted on each resa
 - **`quick_diagnostic` mode.** Every interval is **provisional**. It is labelled `quick_diagnostic_provisional` and is not inferential evidence.
 - **Optional outputs.** Parallel contributions and moderator differences are withheld individually when they are unavailable. They never remove the primary intervals.
 
-**Known limitation: skewed indirect effects.** The percentile interval can be too narrow for the indirect effect (TNIE) when its sampling distribution is skewed. In validation this happened with a quadratic outcome at N = 100 and a binary mediator at N = 150:
-- coverage was 91.5% and 89.5% instead of 95%;
-- the truth fell mostly on one side of the interval.
+**Known limitation: false indirect effects in mixed-null designs.** When the exposure → mediator path is truly zero but included in the model, and the mediator → outcome path is strong, the TNIE interval excludes zero too often. In validation (N = 100, mediator → outcome coefficient 0.5):
+- the interval excluded zero in 39 of 500 datasets (7.8%), and in 32 of 500 with a fresh seed; the pooled rate was 7.1% (95% interval 5.7–8.9%), instead of 5%;
+- the reverse case, a real exposure → mediator path and a truly zero mediator → outcome path, stayed near 5% (4.4%).
 
-Treat TNIE intervals in similar designs as somewhat optimistic. Details are in [`validation/baseline_evidence.md`](validation/baseline_evidence.md#known-limitation-skewed-indirect-effects).
+So in designs like this, about 6–8% of truly null indirect effects will look significant, not 5%. Of the alternative intervals checked, only one reduced the rate, and it cost a large loss of power in ordinary designs, so Mintmed keeps the percentile interval. Larger samples have not been checked. Details are in [`validation/baseline_evidence.md`](validation/baseline_evidence.md#known-limitations).
+
+**Skewed indirect effects.** Run 1 suggested that TNIE intervals under-cover with a quadratic outcome or a binary mediator (91.5% and 89.5%). Run 2, with 500 datasets per design, did not confirm this (94.6% and 94.0%). With the quadratic outcome, the misses still fell mostly on one side: when the interval missed, it usually lay below the true indirect effect.
 
 `analysis.json` and the report record two state fields alongside `overall_status`:
 
@@ -193,7 +196,7 @@ An unavailable interval is never evidence of a null effect.
 - one to four mediators;
 - independent participant rows.
 
-**Checked by simulation:** only the 12 cells in the evidence report, and the interval coverage check did not pass (see above).
+**Checked by simulation:** only the 14 cells in the evidence report. Neither pre-registered run fully passed: run 1 failed its coverage check, and run 2 failed its check for false indirect effects in mixed-null designs (see above).
 
 **Not validated:**
 - four-mediator inference;

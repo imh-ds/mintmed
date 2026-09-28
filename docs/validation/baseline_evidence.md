@@ -1,20 +1,113 @@
 # Mintmed baseline evidence (research beta)
 
-This report summarizes the evidence from the Task 15 validation matrix, which is fixed by [`baseline_release_charter.md`](baseline_release_charter.md).
+This report summarizes the evidence from two validation runs:
+- **Run 1** (Task 15): 12 cells × 200 datasets, fixed by [`baseline_release_charter.md`](baseline_release_charter.md).
+- **Run 2** (Task 16): the same 12 cells plus two mixed-null cells, × 500 datasets, fixed by [`coverage_revalidation_charter.md`](coverage_revalidation_charter.md).
 
-**Headline: the pre-registered validation did not pass.**
-- Point estimates were essentially unbiased in all 12 cells.
-- The pre-registered **coverage gate failed**. Mean interval coverage was 94.8% across the 32 gated effects. Two indirect-effect intervals under-cover beyond chance: cell 08 (quadratic outcome) and cell 11 (binary mediator).
-- A bias-corrected interval was tested as the charter's one permitted correction. It did not fix the failure and was not adopted ([`interval_correction_check.md`](interval_correction_check.md)). The one correction was not used, and there is no run 2.
+Each run is graded only under its own charter. Run 2 is reported alongside run 1 and does not replace it.
 
-Mintmed is therefore released as a **research beta**. Its intervals are **not** validated to the pre-registered standard. Passing broad gates, where they were passed, does not establish that Mintmed is adequate for every design, or better than other methods.
+**Headline: neither pre-registered validation fully passed.**
+- **Point estimates** were essentially unbiased in all 14 cells, in both runs (at most 0.011 population SD).
+- **Run 1: coverage gate failed.** Mean coverage was 94.8% across 32 gated effects, but the gate needed at least 189 of 200 for every effect, which even perfectly calibrated intervals pass with probability about 1 × 10⁻⁵. A bias-corrected interval was checked as the one permitted correction and not adopted ([`interval_correction_check.md`](interval_correction_check.md)).
+- **Run 2: coverage gate passed; null false-positive gate failed.**
+  - Under a feasible coverage rule (exact binomial with Bonferroni adjustment), no effect under-covered. Mean coverage was 94.9% across 38 gated effects.
+  - In cell 14, where the A → M path is truly zero but estimated and M → Y is strong, the TNIE interval excluded zero in 39 of 500 datasets (7.8%) instead of about 5%. That failed the null false zero-exclusion gate.
+  - Candidate interval fixes were checked and none was adopted ([`null_gate_fix_check.md`](null_gate_fix_check.md)). Run 2 stands as failed, and the false-positive rate is documented as a [known limitation](#known-limitations).
+- Run 1's apparent TNIE undercoverage in cells 08 and 11 **did not replicate** at 500 datasets in run 2.
+
+Mintmed therefore remains a **research beta**. Its intervals were close to 95% coverage in every run-2 cell, but the pre-registered validation has not fully passed. Passing broad gates, where they were passed, does not establish that Mintmed is adequate for every design, or better than other methods.
 
 | Source | Contents |
 |---|---|
 | [`baseline_run1_results.md`](baseline_run1_results.md) | The permanent record of run 1 and its gate results. |
-| [`interval_correction_check.md`](interval_correction_check.md) | The BC/BCa check and why it was not adopted. |
+| [`interval_correction_check.md`](interval_correction_check.md) | The BC/BCa check after run 1, and why it was not adopted. |
+| [`coverage_revalidation_results.md`](coverage_revalidation_results.md) | The permanent record of run 2, with per-cell results for all 40 cell-metrics. |
+| [`null_gate_fix_check.md`](null_gate_fix_check.md) | The candidate fixes for run 2's null-gate failure, and why none was adopted. |
 | [`runtime_pilot.md`](runtime_pilot.md) | The accepted runtime forecast. |
-| GitHub artifact `aggregated-benchmark`, run `36296143027` | Raw results (2,400 rows). A git-ignored local copy is in `results/generated/validation-matrix-36296143027/`. |
+| GitHub artifact `aggregated-benchmark`, run `36296143027` | Run 1 raw results (2,400 rows). A git-ignored local copy is in `results/generated/validation-matrix-36296143027/`. |
+| GitHub artifact `aggregated-benchmark`, run `36349731184` | Run 2 raw results (7,000 rows). A git-ignored local copy is in `results/generated/validation-matrix-36349731184/`. |
+
+## Run 2 (Task 16)
+
+The full record, including every cell-metric, is [`coverage_revalidation_results.md`](coverage_revalidation_results.md).
+
+### Run 2 identity
+
+| Item | Value |
+|---|---|
+| Run | `.github/workflows/sharded_benchmark.yml`, run `36349731184`, 140 shards, all succeeded |
+| Dispatched commit | `9ff5de6` (the charter commit) |
+| Platform | GitHub Actions `ubuntu-latest`, Python 3.11.16 |
+| Configuration | `configs/mediation_validation_v2.yaml`, master seed `20260927`, hash `0f2f738887b2a1669cf8c281e43fb9c258652291a4c50bbed9a009ffaafb953b` (single hash across all rows) |
+| Grid | 7,000 of 7,000 expected rows. 0 duplicates, 0 missing. |
+| Statuses | `complete` 5,500, `complete_with_warnings` 1,500; no failure codes, no withheld intervals |
+| Runtime | 30.30 CPU-hours summed across shards, within the 36 CPU-hour budget |
+| Rerun | None. No correction was adopted (see [`null_gate_fix_check.md`](null_gate_fix_check.md)). |
+
+### Run 2 gates
+
+| Gate | Observed | Threshold | Result |
+|---|---:|---:|:---:|
+| Continuous bias, |mean bias| / population SD (worst cell-metric) | 0.0108 | ≤ 0.05 | pass |
+| Binary bias, |mean bias| in probability units (cell 12) | 0.0026 | ≤ 0.02 | pass |
+| Coverage, exact one-sided binomial with Bonferroni adjustment (k = 38): smallest p-value | 0.0046 | > 0.05 / 38 = 0.0013 (fail at ≤ 458 of 500) | pass |
+| Null false zero-exclusion, Wilson upper bound (cells 03, 04, 05, 13, 14 TNIE) | 0.1049 | ≤ 0.10 | **fail** |
+| Unavailable or fatal rows (worst eligible cell-metric) | 0.0000 | ≤ 0.01 | pass |
+
+The lowest coverage counts were 461 of 500, for cell 07 PNDE and cell 14 TNIE. The null gate failed on cell 14 alone: 39 of 500 (Wilson 95% 5.8–10.5%). Cell 13 gave 22 of 500 (4.4%, Wilson upper 6.6%), and cells 03–05 gave 0.
+
+### Run 2 supported and limited designs
+
+"Validated" means only **the exact cell**, as in run 1. Coverage is the range across the cell's gated effects, out of 500. The descriptive p-values are one-sided exact binomial tests against 95%, without multiple-comparison adjustment.
+
+| Cell | Design | N | Point estimates | Intervals (run 2) |
+|---|---|---:|---|---|
+| 01 | One mediator, linear | 100 | Unbiased | Pass; coverage 94.8–95.0% |
+| 02 | One mediator, linear | 250 | Unbiased | Pass; 92.8–96.0% (TNIE 92.8%, p = 0.020) |
+| 03 | No A → M path (null TNIE) | 100 | Unbiased | Pass; TE and PNDE 95.8%. Null TNIE is a structural zero.* |
+| 04 | No M → Y path (null TNIE) | 100 | Unbiased | Pass; TE and PNDE 94.0%. Null TNIE is a structural zero.* |
+| 05 | No mediation (null TNIE) | 100 | Unbiased | Pass; TE and PNDE 94.2%. Null TNIE is a structural zero.* |
+| 06 | Two correlated parallel mediators with M1 × M2 interaction (joint TNIE) | 150 | Unbiased | Pass; 96.0% |
+| 07 | Three serial Gaussian mediators | 200 | Unbiased | Pass; 92.2–94.6% (PNDE 92.2%, p = 0.0046) |
+| 08 | One mediator, quadratic outcome | 100 | Unbiased | Pass; 94.0–94.6%. TNIE misses are one-sided (truth above 24, below 3). |
+| 09 | One mediator, natural-spline outcome (df = 3) | 250 | Unbiased | Pass; 94.8–96.0% |
+| 10 | Binary moderator of A → M and M → Y | 150 | Unbiased | Pass; paired W1 − W0 difference 93.6%. TNIE at each W is point-only. |
+| 11 | Binary mediator, Gaussian outcome | 150 | Unbiased | Pass; 93.8–95.6% |
+| 12 | Binary and Gaussian serial mediators, binary outcome | 250 | Unbiased | Pass; 94.4–95.6% |
+| 13 | Mixed null: A → M = 0.5, M → Y truly zero, both paths fitted | 100 | Unbiased | Pass; 93.8–95.6%. Null TNIE excludes zero in 4.4%. |
+| 14 | Mixed null: A → M truly zero, M → Y = 0.5, both paths fitted | 100 | Unbiased | Coverage passes (92.2–93.8%), but the **null TNIE excludes zero in 7.8%**: the null gate failed. |
+
+\* In cells 03–05 the fitted model omits the null path, as in run 1, so the TNIE is zero by construction. Cells 13 and 14 test estimated null indirect effects.
+
+The unvalidated and unsupported designs listed under [run 1](#supported-limited-and-unsupported-designs) apply to run 2 unchanged.
+
+## Known limitations
+
+### Mixed-null designs: false indirect effects
+
+When the A → M path is truly zero but included in the model, and the M → Y path is strong, the percentile interval for the TNIE excludes zero too often.
+- In run 2's cell 14 (N = 100, M → Y = 0.5), it did so in 39 of 500 datasets (7.8%). A repeat with a fresh seed gave 32 of 500. Pooled over the 1,000 datasets, the rate is 7.1% (Wilson 95% 5.7–8.9%), against a nominal 5%.
+- The exclusions fall on both sides of zero, so the intervals are slightly too narrow, not shifted.
+- In the reverse configuration (cell 13: A → M real, M → Y truly zero) the rate was 4.4%, consistent with 5%.
+- None of the candidate fixes checked (expanded percentile, t × bootstrap SD, BC) removed the excess without a large loss of power elsewhere or a worse false-positive rate ([`null_gate_fix_check.md`](null_gate_fix_check.md)).
+
+**What to do:** in designs of this kind at N around 100, read a TNIE interval that excludes zero knowing that the false-positive rate is about 6–8%, not 5%. Whether the excess shrinks at larger N has not been checked.
+
+### Skewed indirect effects: not confirmed in run 2
+
+Run 1 found that the TNIE interval under-covered with a quadratic outcome (cell 08, 183 of 200) and a binary mediator (cell 11, 179 of 200), with misses mostly on one side. Run 2, with 500 new datasets per cell, **did not confirm** this:
+- cell 08 TNIE: 473 of 500 (94.6%);
+- cell 11 TNIE: 470 of 500 (94.0%), with balanced misses (14 above, 16 below).
+
+After run 1, BC and BCa intervals balanced those misses but raised run-1 coverage only to 92–93.5% ([`interval_correction_check.md`](interval_correction_check.md)).
+
+Cell 08's misses are still one-sided in run 2 (truth above the interval 24 times, below it 3 times), so its intervals tend to sit slightly low even though total coverage is near 95%.
+
+**What to do:** the evidence no longer indicates that TNIE intervals in these designs are generally too narrow. In designs like cell 08 (a nonlinear outcome at modest N), keep in mind that when the interval misses, it has mostly lain below the true indirect effect.
+
+## Run 1 (Task 15)
+
+The sections below record run 1 as published after Task 15. Its numbers are unchanged. Run 2's results are [above](#run-2-task-16), and the revised limitations are under [Known limitations](#known-limitations).
 
 ## Run identity
 
@@ -28,6 +121,8 @@ Mintmed is therefore released as a **research beta**. Its intervals are **not** 
 | Rerun | None. The one-correction rule was not used (see [`interval_correction_check.md`](interval_correction_check.md)). |
 
 ## Supported, limited and unsupported designs
+
+The interval labels in this table are run 1's. Run 2 did not confirm the undercoverage of cells 08 and 11 (see [Run 2 supported and limited designs](#run-2-supported-and-limited-designs)).
 
 "Validated" below means only **the exact cell**: its generating model, node families, terms and sample size. It does not extend to other designs.
 
@@ -48,7 +143,7 @@ Mintmed is therefore released as a **research beta**. Its intervals are **not** 
 
 **How the labels were assigned.** "Consistent with 95%" and "under-covers" are descriptive, not gates. They mark whether an exact one-sided binomial test against 95% coverage gives p < 0.05. Only cell 11 TNIE (p = 0.001) and cell 08 TNIE (p = 0.024) do; the next lowest is cell 07 TE, at p = 0.078. No effect was tested against a multiple-comparison correction. Under the pre-registered gate, 16 of 32 effects fell short (see [Coverage](#coverage)).
 
-\* **Structural zeros.** In cells 03–05, the declared models omit the null path, so the TNIE is zero by construction: the width is 0 and the error is 0. These cells test how Mintmed handles structurally absent paths. They do **not** test how well it detects a null indirect effect when the model includes both paths.
+\* **Structural zeros.** In cells 03–05, the declared models omit the null path, so the TNIE is zero by construction: the width is 0 and the error is 0. These cells test how Mintmed handles structurally absent paths. Estimated null indirect effects, where the model includes both paths, are tested by run 2's cells 13 and 14 (see [Run 2](#run-2-task-16) and [Known limitations](#known-limitations)).
 
 **Unvalidated.** Mintmed runs these, but this matrix does not validate them:
 - four-mediator inference;
@@ -61,17 +156,9 @@ Mintmed is therefore released as a **research beta**. Its intervals are **not** 
 
 **Unsupported.** Repeated, clustered or multilevel rows; latent measurement models; ordinal and count nodes; automatic term or smoothness selection.
 
-## Known limitation: skewed indirect effects
-
-When the sampling distribution of the indirect effect is skewed, the percentile bootstrap interval for the TNIE under-covers. This happened with a quadratic outcome (cell 08, N = 100) and a binary mediator (cell 11, N = 150):
-- The observed coverage was 89.5–91.5% rather than 95%.
-- The misses fall mostly on one side: in cell 11 the truth lay above the interval 15 times and below it 6 times.
-
-BC and BCa intervals balanced the misses, but raised coverage only to 92–93.5% ([`interval_correction_check.md`](interval_correction_check.md)).
-
-**What to do:** treat TNIE intervals in comparable designs, such as nonlinear outcomes, binary mediators or modest N, as somewhat too narrow.
-
 ## Gates
+
+These are run 1's gates. Run 2's gates, including its feasible coverage rule, are under [Run 2 gates](#run-2-gates).
 
 | Gate | Observed | Threshold | Result |
 |---|---:|---:|:---:|
@@ -237,7 +324,8 @@ The total shard runtime was 40,130 s (11.1 CPU-hours), within the amended 36 CPU
 
 ## What this evidence does not show
 
-- It does not show that Mintmed's intervals meet the pre-registered coverage standard. They did not.
-- It does not validate any design outside the 12 exact cells: other node families, terms, sample sizes, more mediators, or model misspecification.
+- It does not show that Mintmed passed a pre-registered validation. Run 1 failed its coverage gate, and run 2 failed its null false-positive gate.
+- Run 2's passed coverage gate supports calibrated coverage only in its 14 exact cells, at their sample sizes.
+- It does not validate any design outside the 14 exact cells: other node families, terms, sample sizes, more mediators, or model misspecification.
 - It does not test the causal identification assumptions. No simulation can.
 - It does not show that Mintmed performs better than any other mediation method.
