@@ -39,6 +39,11 @@ R runners and the Python module read it. A test checks it against the plan.
     per mode, and once per moderator level in cell 10.
   - The Python equivalent is `int(analysis_seed) % 2147483647`. It is stored as
     `r_seed` in every row, and a test checks that R and Python agree.
+  - The Stage 1 noise-floor rerun (tool `mediation_reseed`, T17-S7) runs
+    `run_mediation.R` in its primary mode only with
+    `(analysis_seed + 1000000007) mod 2147483647`
+    (`--tool-id mediation_reseed --seed-offset 1000000007`). See
+    [`comparator_charter.md`](comparator_charter.md).
 - **Determinism.** Rerunning a runner on the same manifest gives byte-identical
   rows apart from `runtime_seconds`. `tests/integration/test_comparator_r_runners.py`
   checks this.
@@ -406,12 +411,18 @@ Over 500 datasets per cell, the total is about **32 CPU-hours**:
 
 ## Paired comparison rules as implemented
 
-`comparator_benchmark_reporting.py` applies `stage1.comparison_rules` to each
-comparator's primary mode. The interpretation choices below are to be
-confirmed when the Stage 1 charter is frozen (T17-S7):
+**Superseded for the verdict (T17-S7).** The frozen Stage 1 rules, judged
+against a measured noise floor, are in [`comparator_charter.md`](comparator_charter.md)
+and are implemented as `CHARTER_RULES` / `classify_charter_tier` (report
+column `tier`). The T17-S3 interpretation below is kept only as the
+descriptive column `tier_s3_rules`; the calibration
+([`comparator_rule_calibration.md`](comparator_rule_calibration.md)) showed
+that it fails methods that agree by construction.
 
-- **Primary agreement rates** are judged on their lower Wilson bound (`tier`).
-  - `tier_primary_on_point` also reports the tier with the observed rates.
+`comparator_benchmark_reporting.py` applied `stage1.comparison_rules` to each
+comparator's primary mode with these T17-S3 interpretation choices:
+
+- **Primary agreement rates** are judged on their lower Wilson bound.
   - The reason: a Wilson lower bound of 0.99 needs about 380 significant pairs
     even with perfect sign agreement. That is unattainable for effects with
     low power.
