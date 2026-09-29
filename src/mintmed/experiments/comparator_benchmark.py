@@ -100,6 +100,107 @@ FAILED_STATUSES = frozenset({"error", "runner_failed", "missing_output"})
 # Cell 10 moderated-mediation truths (mediation_validation.extract_metrics).
 _MODERATED_TRUTHS = {"TNIE_W0": 0.09, "TNIE_W1": 0.36, "TNIE_difference": 0.27}
 
+# ---------------------------------------------------------------------------
+# Harness agreement tolerances (T17-S5). Declared before the Stage 1 run and
+# enforced by tests/integration/test_comparator_harness.py against Mintmed
+# point estimates computed fresh on the same exported datasets. They validate
+# the harness (estimand mapping, model specification, data transfer); they are
+# not Stage 1 comparison margins, which live in comparator_benchmark_reporting.
+
+EXACT_POINT_TOLERANCE = 1e-8
+"""Absolute tolerance where a comparator's point estimate is Mintmed's plug-in value.
+
+Applies to lavaan (both modes) in every supported cell and to ``mediate()``'s
+bootstrap-mode point estimate in the cells whose outcome is linear in the
+mediator (01-05, 10, 13-16). There both reduce algebraically to the OLS path
+products Mintmed reports: lavaan's ML regression coefficients equal OLS in a
+recursive observed-variable model, and ``med.fun``'s single shared mediator
+draw cancels from every contrast when Y is linear in M. Measured differences
+are below 1e-15 (docs/validation/comparator_support.md), so 1e-8 leaves seven
+orders of magnitude for BLAS, platform and optimizer-stopping differences
+(lavaan's nlminb on Linux CI) while any estimand or specification error, which
+moves an effect by at least ~1e-3 on these datasets, still fails.
+"""
+
+QUASI_BAYES_TOLERANCE_MULTIPLIER = 5.0
+"""Multiple of the Monte Carlo SE allowed between ``mediate()``'s quasi-Bayesian point and Mintmed.
+
+In the linear-in-M cells the quasi-Bayesian point is the mean of ``sims``
+independent simulated effects whose expectation is the plug-in value (the
+simulated coefficients of the two node models are independent, so
+E[a* b*] = a b). Its Monte Carlo SE is SD(draws) / sqrt(sims), with SD(draws)
+estimated from the run's own percentile interval (see
+:func:`quasi_bayes_tolerance`). Five SEs gives a two-sided false-alarm rate of
+about 6e-7 per comparison under normality (about 1e-4 over the ~150 checked
+effects) and still leaves slack for the interval-based SD estimate being off
+by tens of percent, since the draws of a product are not exactly normal.
+"""
+
+QUASI_BAYES_INTERVAL_Z = 1.959963984540054
+"""Normal quantile converting a 95% percentile interval width into a draw SD: SD ~ width / (2 z)."""
+
+MONTE_CARLO_AVERAGE_SEEDS = 200
+"""Seeds averaged in the nonlinear-cell harness check of ``mediate()`` (cells 08, 09, 11).
+
+There the bootstrap-mode point estimate carries Monte Carlo error from one set
+of ``n`` simulated mediator values (seed-to-seed SD 0.015-0.044 on replicate 0,
+docs/validation/comparator_support.md) that does not shrink with ``sims``. The
+average over 200 seeds has SE 0.001-0.003, tight enough to detect a model or
+basis mismatch of the size of the TNIE itself (0.04-0.24).
+"""
+
+MONTE_CARLO_AVERAGE_TOLERANCE_MULTIPLIER = 4.0
+"""Multiple of the seed-average's own SE (sample SD / sqrt(seeds)) allowed from Mintmed's exact value.
+
+Four SEs: a false-alarm rate of about 6e-5 per checked effect (two effects in
+three cells), with the SE measured on the same run rather than assumed. This
+is a harness check on one dataset, not a verdict on either method.
+"""
+
+
+def quasi_bayes_tolerance(lower: float, upper: float, sims: int) -> float:
+    """Allowed |quasi-Bayesian point - Mintmed| for one effect of one dataset.
+
+    ``QUASI_BAYES_TOLERANCE_MULTIPLIER * SD(draws) / sqrt(sims)`` with
+    ``SD(draws) = (upper - lower) / (2 * QUASI_BAYES_INTERVAL_Z)``, floored at
+    :data:`EXACT_POINT_TOLERANCE` (a structural zero has a [0, 0] interval).
+    """
+
+    if sims <= 0 or not (math.isfinite(lower) and math.isfinite(upper)) or upper < lower:
+        raise ValueError("quasi-Bayesian tolerance needs a finite interval and a positive draw count")
+    draw_sd = (upper - lower) / (2.0 * QUASI_BAYES_INTERVAL_Z)
+    return max(EXACT_POINT_TOLERANCE, QUASI_BAYES_TOLERANCE_MULTIPLIER * draw_sd / math.sqrt(sims))
+
+
+def monte_carlo_average_tolerance(values: Sequence[float]) -> float:
+    """Allowed |mean(values) - Mintmed| for a seed average: multiplier x sample SD / sqrt(len)."""
+
+    count = len(values)
+    if count < 2:
+        raise ValueError("a Monte Carlo average needs at least two seeds")
+    mean = math.fsum(values) / count
+    sd = math.sqrt(math.fsum((value - mean) ** 2 for value in values) / (count - 1))
+    return max(EXACT_POINT_TOLERANCE, MONTE_CARLO_AVERAGE_TOLERANCE_MULTIPLIER * sd / math.sqrt(count))
+
+
+REQUIRE_R_ENV = "MINTMED_REQUIRE_R"
+"""When set to ``1``, the R-dependent tests fail instead of skipping if R is unavailable (CI)."""
+
+
+def r_packages_available(rscript: str | None) -> bool:
+    """Whether ``rscript`` runs and loads mediation, lavaan and jsonlite."""
+
+    if rscript is None:
+        return False
+    try:
+        completed = subprocess.run(
+            [rscript, "-e", "suppressWarnings(suppressPackageStartupMessages({library(mediation); library(lavaan); library(jsonlite)}))"],
+            capture_output=True, timeout=120, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
 
 def effect_truths(cell_id: str) -> dict[str, float]:
     """Return the population truth of every effect Mintmed reports for ``cell_id``."""
@@ -733,10 +834,18 @@ if __name__ == "__main__":
 
 __all__ = [
     "COMBINATION_COLUMNS",
+    "EXACT_POINT_TOLERANCE",
     "MODES",
+    "MONTE_CARLO_AVERAGE_SEEDS",
+    "MONTE_CARLO_AVERAGE_TOLERANCE_MULTIPLIER",
+    "QUASI_BAYES_TOLERANCE_MULTIPLIER",
     "RAW_COLUMNS",
+    "REQUIRE_R_ENV",
     "TOOLS",
     "comparator_record",
+    "monte_carlo_average_tolerance",
+    "quasi_bayes_tolerance",
+    "r_packages_available",
     "effect_truths",
     "expected_combinations",
     "expected_row_count",

@@ -69,11 +69,19 @@ jobs:
     # branch warms the library that a later dispatch's shards restore. Any
     # change to the pins or install script changes the key and forces a fresh
     # install from the snapshot.
-    name: R comparator environment
+    # T17-S5: the same job then runs the R-dependent comparator tests (runner
+    # checks and the harness tolerances) with MINTMED_REQUIRE_R=1, so a
+    # missing R or package fails the job instead of skipping the tests. The
+    # main `tests` job is unchanged: without R those modules skip there.
+    name: R comparator environment and harness tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
       - uses: r-lib/actions/setup-r@v2
         with:
           r-version: "4.6"
@@ -92,6 +100,24 @@ jobs:
         run: Rscript benchmarks/comparators/r/install_packages.R
       - name: Record R comparator versions
         run: Rscript benchmarks/comparators/r/versions.R
+      - name: Install package and test dependencies
+        run: python -m pip install -e ".[test]"
+      - name: Run R-dependent comparator tests (must not skip)
+        env:
+          MINTMED_REQUIRE_R: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -q -rs -p no:cacheprovider \
+            tests/integration/test_comparator_r_runners.py \
+            tests/integration/test_comparator_harness.py | tee r-comparator-tests.log
+          # Belt and braces: MINTMED_REQUIRE_R already turns a missing R into a
+          # failure; also refuse any skip caused by R being unavailable.
+          if grep -q "Rscript with mediation, lavaan and jsonlite is not available" r-comparator-tests.log; then
+            echo "R-dependent comparator tests were skipped" >&2
+            exit 1
+          fi
+          grep -Eq "[0-9]+ passed" r-comparator-tests.log
 
   cli-and-validation:
     name: CLI examples and validation smoke

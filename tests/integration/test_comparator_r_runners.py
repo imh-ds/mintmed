@@ -9,6 +9,7 @@ function space as patsy's cr(M, df = 3, constraints = "center").
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -26,22 +27,11 @@ CONFIG = ROOT / "configs" / "mediation_validation_v3.yaml"
 CELLS = ["cell01_linear_n100", "cell08_quadratic_n100", "cell10_moderated_n150", "cell11_binary_mediator_n150"]
 BOOT, QB = 49, 100
 RSCRIPT = cb.find_rscript()
+R_READY = cb.r_packages_available(RSCRIPT)
+if not R_READY and os.environ.get(cb.REQUIRE_R_ENV) == "1":
+    pytest.fail(f"{cb.REQUIRE_R_ENV}=1 but Rscript with mediation, lavaan and jsonlite is not available", pytrace=False)
 
-
-def _r_ready() -> bool:
-    if RSCRIPT is None:
-        return False
-    try:
-        completed = subprocess.run(
-            [RSCRIPT, "-e", "suppressWarnings(suppressPackageStartupMessages({library(mediation); library(lavaan); library(jsonlite)}))"],
-            capture_output=True, timeout=120, check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return completed.returncode == 0
-
-
-pytestmark = pytest.mark.skipif(not _r_ready(), reason="Rscript with mediation, lavaan and jsonlite is not available")
+pytestmark = pytest.mark.skipif(not R_READY, reason="Rscript with mediation, lavaan and jsonlite is not available")
 
 
 @pytest.fixture(scope="module")
