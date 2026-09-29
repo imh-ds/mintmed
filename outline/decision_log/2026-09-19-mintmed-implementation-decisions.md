@@ -1133,6 +1133,27 @@ Each task entry should record:
   - the due date;
   - the non-inferiority margins (draft: 2 percentage points for coverage and false positives, 0.02 SD for bias).
 
+### Information-guided mediation reopened; Task 17 narrowed to Stage 1
+
+- **Date:** 2026-09-29
+- **Task:** Task 17 and new Task 18.
+- **Status:** Planned.
+- **Decision:** The owner approved three changes.
+  1. **D1.** Reopen `outline/01` section 1. Information theory must have a consequential diagnostic and inferential role, not only optional summaries. MI is not the effect estimate.
+  2. **D2.** Create a bounded design study, Task 18. It pits a low-dimensional, model-free residual conditional-MI test, with a predeclared consequence (model revision inside the bootstrap, or a `specification_unresolved` status), against an AIC/REML rule on the same candidate models. Task 17's Stage 2 scenarios merge into it.
+  3. **D3.** Task 17 continues with Stage 1 only.
+     - It is judged by the noise-floor calibration in `docs/validation/comparator_rule_calibration.md`.
+     - lavaan moves to the current CRAN version, 0.7.2.
+- **Rationale:**
+  - Declared-term Mintmed offers mostly a scope advantage over R `mediation`, since `mediate()` fits curves when given the formula.
+  - A held-out log-score within one model family is asymptotically AIC (Stone, 1977). A model-based information rule would therefore largely rename a familiar rule. Model-free information is usable only in low dimension, hence residual tests.
+  - Stage 1 still documents the current engine and gives the baseline arm.
+- **Files:**
+  - `outline/04_proposal_adaptive_specification_with_information_inference.md` (proposal);
+  - `outline/05_response_to_adaptive_information_proposal.md` (review);
+  - `outline/06_resolution_information_guided_mediation.md` (resolution and the Task 18 design).
+- **Follow-up:** the reviewer responds to `06` section 6 before the Task 18 charter freezes.
+
 ## Reusable entry template
 
 ### Task NN — Name

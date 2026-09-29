@@ -182,6 +182,9 @@ cython_debug/
 
 # Outline folder
 outline/*
+!outline/04_proposal_adaptive_specification_with_information_inference.md
+!outline/05_response_to_adaptive_information_proposal.md
+!outline/06_resolution_information_guided_mediation.md
 !outline/decision_log/
 !outline/decision_log/*.md
 
