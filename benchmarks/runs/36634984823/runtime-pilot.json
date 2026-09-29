@@ -1,0 +1,214 @@
+{
+  "cases": [
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell15_a_path_only_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 183504896,
+      "median_cpu_seconds": 5.8007903165000005,
+      "median_wall_seconds": 5.801006173500003,
+      "n": 250,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 14159421617202198538,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell15_a_path_only_n250",
+          "config_hash": "2b95e548bfb5e7d13192d6f844920195057a4b52d29891f06dcd293d2f5cc02e",
+          "cpu_seconds": 5.767762224,
+          "data_seed": 12763243052704728625,
+          "draw_budget": 0,
+          "git_commit": "2db6245c7f6935c91918367e6f009a91f0846a37",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183504896,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 5.767904342000001
+        },
+        {
+          "analysis_seed": 14159421617202198538,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell15_a_path_only_n250",
+          "config_hash": "2b95e548bfb5e7d13192d6f844920195057a4b52d29891f06dcd293d2f5cc02e",
+          "cpu_seconds": 5.833818409,
+          "data_seed": 12763243052704728625,
+          "draw_budget": 0,
+          "git_commit": "2db6245c7f6935c91918367e6f009a91f0846a37",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183054336,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 5.8341080050000045
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell16_b_path_only_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 183246848,
+      "median_cpu_seconds": 5.8061365655,
+      "median_wall_seconds": 5.806414788000005,
+      "n": 250,
+      "repeat_count": 2,
+      "repeats": [
+        {
+          "analysis_seed": 13092582269395566833,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell16_b_path_only_n250",
+          "config_hash": "d06e1a20c901eac947c5c97e70d74f50aa1fc4b019a781bce77935892c1338cf",
+          "cpu_seconds": 5.822063606,
+          "data_seed": 5884233782324610953,
+          "draw_budget": 0,
+          "git_commit": "2db6245c7f6935c91918367e6f009a91f0846a37",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183246848,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 5.822431189
+        },
+        {
+          "analysis_seed": 13092582269395566833,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell16_b_path_only_n250",
+          "config_hash": "d06e1a20c901eac947c5c97e70d74f50aa1fc4b019a781bce77935892c1338cf",
+          "cpu_seconds": 5.790209525,
+          "data_seed": 5884233782324610953,
+          "draw_budget": 0,
+          "git_commit": "2db6245c7f6935c91918367e6f009a91f0846a37",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 183197696,
+          "point_fit_count": 2,
+          "repeat": 1,
+          "status": "complete",
+          "wall_seconds": 5.79039838700001
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    }
+  ],
+  "environment": {
+    "mintmed": "0.1.0",
+    "numpy": "2.4.6",
+    "pandas": "3.0.6",
+    "patsy": "1.0.3",
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "python": "3.11.16",
+    "scipy": "1.17.1",
+    "statsmodels": "0.14.6"
+  },
+  "experiment": "mintmed_task14_runtime_pilot",
+  "forecast": {
+    "aggregate_pass": true,
+    "base_cpu_hours": 1.6120731780555555,
+    "base_cpu_seconds": 5803.463441,
+    "budget_pass": true,
+    "ceiling_cpu_hours": 36.0,
+    "cell_count": 2,
+    "datasets_per_cell": 500,
+    "datasets_per_shard": 50,
+    "integration_methods": {
+      "cell15_a_path_only_n250": [
+        "gaussian_linear_exact"
+      ],
+      "cell16_b_path_only_n250": [
+        "gaussian_linear_exact"
+      ]
+    },
+    "matrix_bootstrap_refits": 399000,
+    "matrix_complete_analyses": 400000,
+    "matrix_point_fits": 1000,
+    "max_shard_wall_hours": 0.08467688232500008,
+    "median_cpu_seconds_by_proxy": {
+      "cell15_a_path_only_n250": 5.8007903165000005,
+      "cell16_b_path_only_n250": 5.8061365655
+    },
+    "projected_cpu_hours": 1.6926768369583334,
+    "projected_cpu_seconds": 6093.63661305,
+    "proxy_cpu_seconds": {
+      "cell15_a_path_only_n250": 5.8007903165000005,
+      "cell16_b_path_only_n250": 5.8061365655
+    },
+    "proxy_map": {
+      "cell15_a_path_only_n250": [
+        "cell15_a_path_only_n250"
+      ],
+      "cell16_b_path_only_n250": [
+        "cell16_b_path_only_n250"
+      ]
+    },
+    "reference_platform": "github-actions ubuntu-latest",
+    "rerun_fraction": 0.05,
+    "shard_count": 20,
+    "shard_pass": true,
+    "shard_replicate_blocks": 10,
+    "shard_wall_ceiling_hours": 4.0,
+    "shard_wall_hours_by_cell": {
+      "cell15_a_path_only_n250": 0.08459800669687506,
+      "cell16_b_path_only_n250": 0.08467688232500008
+    },
+    "slowest_shard_cell": "cell16_b_path_only_n250",
+    "status": "pass"
+  },
+  "git_commit": "2db6245c7f6935c91918367e6f009a91f0846a37",
+  "pilot_settings": {
+    "bootstrap_replicates": 399,
+    "ceiling_cpu_hours": 36.0,
+    "cell_ids": [
+      "cell15_a_path_only_n250",
+      "cell16_b_path_only_n250"
+    ],
+    "datasets_per_cell": 500,
+    "integration_draws": 256,
+    "integration_tolerance": 0.001,
+    "reference_platform": "github-actions ubuntu-latest",
+    "repeats": 2,
+    "rerun_fraction": 0.05,
+    "shard_replicate_blocks": 10,
+    "shard_wall_ceiling_hours": 4.0
+  },
+  "runtime_supported": true,
+  "schema_version": 1,
+  "source_config": "configs/comparator_mintmed_cells15_16.yaml",
+  "source_config_hash": "a89c00731c7f8adf97e7ba6463d02ece5f47cd9911b13ff30ef75c55035fc3f3",
+  "status": "pass",
+  "supported_python": ">=3.11,<3.12"
+}
