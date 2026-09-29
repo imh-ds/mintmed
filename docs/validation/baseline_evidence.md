@@ -17,6 +17,8 @@ Each run is graded only under its own charter. Run 2 is reported alongside run 1
 
 Mintmed therefore remains a **research beta**. Its intervals were close to 95% coverage in every run-2 cell, but the pre-registered validation has not fully passed. Passing broad gates, where they were passed, does not establish that Mintmed is adequate for every design, or better than other methods.
 
+**Stage 1 comparator result (Task 17).** On the same datasets and correctly specified models, Mintmed was compared with R `mediation::mediate()` and lavaan under a pre-registered charter ([`comparator_results.md`](comparator_results.md)). Of 72 judged cell-effects, 68 were `negligible`, 2 `tolerable` and 2 `substantive`. The two `substantive` verdicts (cells 08 and 11 TNIE, against `mediate()`) record that the two tools reach different significance decisions there: Mintmed's intervals were narrower and near 95% coverage, while `mediate()`'s were wider and over-covered. The mixed-null false-positive excess of cell 14 is shared by the standard tools at N = 100 and was not seen in any tool at N = 250. This does not change either run's verdict, covers correctly specified models only, and does not show that Mintmed is better than the other tools.
+
 | Source | Contents |
 |---|---|
 | [`baseline_run1_results.md`](baseline_run1_results.md) | The permanent record of run 1 and its gate results. |
@@ -24,6 +26,7 @@ Mintmed therefore remains a **research beta**. Its intervals were close to 95% c
 | [`coverage_revalidation_results.md`](coverage_revalidation_results.md) | The permanent record of run 2, with per-cell results for all 40 cell-metrics. |
 | [`null_gate_fix_check.md`](null_gate_fix_check.md) | The candidate fixes for run 2's null-gate failure, and why none was adopted. |
 | [`runtime_pilot.md`](runtime_pilot.md) | The accepted runtime forecast. |
+| [`comparator_results.md`](comparator_results.md) | Task 17 Stage 1: Mintmed against `mediate()` and lavaan on the same datasets (correctly specified models). |
 | GitHub artifact `aggregated-benchmark`, run `36296143027` | Run 1 raw results (2,400 rows). A git-ignored local copy is in `results/generated/validation-matrix-36296143027/`. |
 | GitHub artifact `aggregated-benchmark`, run `36349731184` | Run 2 raw results (7,000 rows). A git-ignored local copy is in `results/generated/validation-matrix-36349731184/`. |
 
@@ -93,11 +96,13 @@ When the A → M path is truly zero but included in the model, and the M → Y p
 
 **What to do:** in designs of this kind at N around 100, read a TNIE interval that excludes zero knowing that the false-positive rate is about 6–8%, not 5%. Whether the excess shrinks at larger N has not been checked.
 
+**Update (Task 17 Stage 1, [`comparator_results.md`](comparator_results.md#mixed-null-comparison)).** On the run-2 datasets, the standard tools' percentile bootstraps show the same excess in cell 14: `mediate()` 41 of 500 (8.2%), its reseeded rerun 7.0% and lavaan 7.2%, against Mintmed's 7.8%. At N = 250 (cells 15 and 16, same design) Mintmed gave 4.6% and 4.4%, and every tool was at 4.2–5.4%. The paragraph above is kept as written in run 2.
+
 **How serious is this?** It is a genuine limitation: the pre-registered gate failed, and the result stands. It is not a detrimental one, for four reasons:
 - **Size.** 7.1% against 5% is about 2 extra false positives per 100 analyses. The gate failed by a small margin: the Wilson upper bound was 0.1049 against a limit of 0.10, and a fresh-seed repeat gave 0.089, which would have passed.
 - **Scope.** It appears only when the A → M path is truly zero while M → Y is strong. The reverse case (cell 13) was on target, and cells 03–05 had no false positives.
 - **No spill-over.** Point estimates were unbiased in all 14 cells. All 38 gated effects passed the run-2 coverage gate, including cell 14's TE and PNDE.
-- **Not specific to Mintmed as far as is known.** The methods literature documents inflated false-positive rates for bootstrap tests of indirect effects when one path is zero and the other is large, most strongly for bias-corrected intervals (Fritz, Taylor & MacKinnon, 2012, *Multivariate Behavioral Research* 47:61–87). That matches the BC result in [`null_gate_fix_check.md`](null_gate_fix_check.md). Other software has not yet been run on these datasets, so it is untested whether Mintmed matches established tools exactly.
+- **Not specific to Mintmed as far as is known.** The methods literature documents inflated false-positive rates for bootstrap tests of indirect effects when one path is zero and the other is large, most strongly for bias-corrected intervals (Fritz, Taylor & MacKinnon, 2012, *Multivariate Behavioral Research* 47:61–87). That matches the BC result in [`null_gate_fix_check.md`](null_gate_fix_check.md). Other software has not yet been run on these datasets, so it is untested whether Mintmed matches established tools exactly. (Since checked in Task 17 Stage 1: `mediate()` and lavaan show the same excess at N = 100; see the update above.)
 
 What it does mean is that a borderline "significant" indirect effect deserves extra caution when the A → M path is itself weak.
 

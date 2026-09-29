@@ -1,5 +1,7 @@
 # Task 17 Stage 1 comparator charter
 
+**Result:** [`comparator_results.md`](comparator_results.md) (T17-S9; runs `36636602823` and `36636611981`).
+
 This charter fixes the Stage 1 comparator run (T17-S8) **before** it is dispatched. After dispatch it is immutable, apart from the single documented correction allowed in [One-correction rule](#one-correction-rule). If a permitted rerun happens, the original artifacts are kept alongside the new ones.
 
 Stage 1 asks whether Mintmed's current estimator is as good as the standard tools **when every tool fits the correctly specified model to the same datasets**. The comparators are R `mediation::mediate()` and lavaan used purely as an observed-variable path model. Stage 2 (misspecification) is not part of Task 17: it was merged into Task 18 (owner decisions D2/D3, 2026-09-29), and this charter does not design it.
