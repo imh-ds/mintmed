@@ -9,24 +9,25 @@ measured variables, with no latent variables and no measurement model.
 | Item | Pin |
 | --- | --- |
 | R | 4.6.x |
-| Package snapshot | Posit Package Manager CRAN, **2026-07-16** |
+| Package snapshot | Posit Package Manager CRAN, **2026-09-28** |
 | mediation | 4.5.1 |
-| lavaan | 0.6-21 |
+| lavaan | 0.7-2 |
 | jsonlite | 2.0.0 |
 
 Dependencies come from the same snapshot, so the snapshot date fixes every
 version. R's bundled recommended packages (MASS, Matrix, boot, ...) come with
 R itself; `versions.R` records them.
 
-The pins live in `pins.R`. 2026-07-16 is the last snapshot with lavaan 0.6-21;
-from 2026-07-17 the snapshot serves lavaan 0.7-2. Changing the date is a
-deliberate re-pin: update `COMPARATOR_PINNED` to match, or the install fails.
+The pins live in `pins.R`. lavaan 0.7-2 (current CRAN) was chosen by the
+owner on 2026-09-29, replacing the earlier 0.6-21 pin (snapshot 2026-07-16,
+the last with 0.6-21). Changing the date is a deliberate re-pin: update
+`COMPARATOR_PINNED` to match, or the install fails.
 
 Snapshot URLs:
 
-- Linux (binaries): `https://packagemanager.posit.co/cran/__linux__/<codename>/2026-07-16`,
+- Linux (binaries): `https://packagemanager.posit.co/cran/__linux__/<codename>/2026-09-28`,
   for example `__linux__/noble/...` on `ubuntu-latest`.
-- Windows and macOS: `https://packagemanager.posit.co/cran/2026-07-16`.
+- Windows and macOS: `https://packagemanager.posit.co/cran/2026-09-28`.
 
 ## Files
 

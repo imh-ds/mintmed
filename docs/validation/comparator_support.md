@@ -8,7 +8,7 @@ cannot be estimated. It covers Stage 1 of Task 17, where all tools fit correctly
 specified models to the exact datasets Mintmed analysed. The runners are:
 
 - `benchmarks/comparators/r/run_mediation.R`: `mediation::mediate()` 4.5.1.
-- `benchmarks/comparators/r/run_lavaan.R`: lavaan 0.6-21, used only as an
+- `benchmarks/comparators/r/run_lavaan.R`: lavaan 0.7-2 (0.6-21 before 2026-09-29), used only as an
   observed-variable path model (`sem()` on measured variables, labelled
   regressions and `:=` defined parameters). It has no latent variables and no
   measurement model.

@@ -1,10 +1,10 @@
 # Single source of truth for the Task 17 R comparator environment.
 # Sourced by install_packages.R and versions.R; defines constants only.
 
-# Posit Package Manager CRAN snapshot. 2026-07-16 is the last snapshot that
-# serves lavaan 0.6-21 (0.7-2 appears from 2026-07-17); mediation 4.5.1 and
-# jsonlite 2.0.0 are current in it. Changing this date changes every package.
-COMPARATOR_SNAPSHOT_DATE <- "2026-07-16"
+# Posit Package Manager CRAN snapshot. 2026-09-28 serves lavaan 0.7-2 (current
+# CRAN; the owner chose it over 0.6-21 on 2026-09-29), mediation 4.5.1 and
+# jsonlite 2.0.0. Changing this date changes every package.
+COMPARATOR_SNAPSHOT_DATE <- "2026-09-28"
 COMPARATOR_SNAPSHOT_BASE <- "https://packagemanager.posit.co/cran"
 
 # R minor version the environment is pinned to (any 4.6.x patch release).
@@ -13,7 +13,7 @@ COMPARATOR_R_MINOR <- "4.6"
 # Exact versions the snapshot must yield; install_packages.R asserts them.
 COMPARATOR_PINNED <- c(
   mediation = "4.5.1",
-  lavaan = "0.6.21",
+  lavaan = "0.7.2",
   jsonlite = "2.0.0"
 )
 
