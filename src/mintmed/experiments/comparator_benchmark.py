@@ -13,7 +13,7 @@ For its selection it exports the exact datasets Mintmed analysed (reusing
 ``raw_metrics.csv`` plus ``metadata.json``.
 
 Row contract: one row per ``(tool, cell_id, replicate)``. The combination key
-includes the tool so that a shard may run one tool or both, and every tool
+includes the tool so that a shard may run one tool or several, and every tool
 appears for every cell: a cell outside a tool's support matrix yields a row
 with status ``not_estimable`` and the reason, never a missing row or an
 imputed value. Per-mode, per-effect results live in ``records_json`` as
@@ -21,6 +21,15 @@ imputed value. Per-mode, per-effect results live in ``records_json`` as
 ``metric_record`` (truth, estimate, bias, lower, upper, coverage, width,
 zero_exclusion, interval_available, status, reason) plus the comparator's
 runtime and draw counts.
+
+Tools. ``mediation`` and ``lavaan`` are the two comparators (R runners).
+``mediation_reseed`` is the Stage 1 noise-floor tool (T17-S7): the same
+``run_mediation.R`` in its primary mode only (percentile bootstrap, 399
+refits) on the same datasets, with the R seed shifted by
+:data:`RESEED_SEED_OFFSET`. Its disagreement with ``mediation`` measures how
+often two runs of one method disagree by bootstrap Monte Carlo error alone
+(docs/validation/comparator_rule_calibration.md). It has the ``mediation``
+support matrix and is never compared with Mintmed itself.
 """
 
 from __future__ import annotations
@@ -62,10 +71,35 @@ R_DIR = REPO_ROOT / "benchmarks" / "comparators" / "r"
 SUPPORT_MATRIX_PATH = REPO_ROOT / "benchmarks" / "comparators" / "support_matrix.json"
 EXPORTER_PATH = REPO_ROOT / "scripts" / "export_validation_datasets.py"
 
-TOOLS: tuple[str, ...] = ("mediation", "lavaan")
+R_RUNNERS: tuple[str, ...] = ("mediation", "lavaan")
+"""Comparators with their own R runner (``run_<tool>.R``) and support-matrix entry."""
+
+RESEED_TOOLS: dict[str, str] = {"mediation_reseed": "mediation"}
+"""Noise-floor tools: tool id -> the R runner rerun with a shifted seed (primary mode only)."""
+
+TOOLS: tuple[str, ...] = (*R_RUNNERS, *RESEED_TOOLS)
+"""Every tool id in the raw-row contract (``expected_combinations``)."""
+
 MODES: tuple[str, ...] = ("primary", "secondary")
 QUASI_BAYES_SIMS = 1000  # mediate()'s package default, the secondary (descriptive) mode
 SEED_MODULUS = 2147483647  # R seed = analysis_seed mod (2^31 - 1); see common.R
+
+RESEED_SEED_OFFSET = 1_000_000_007
+"""Offset added to the R seed of a noise-floor rerun: ``(analysis_seed + offset) mod (2^31 - 1)``.
+
+A fixed, documented constant (frozen in docs/validation/comparator_charter.md).
+It is nonzero and below the modulus, so the rerun's seed always differs from
+the primary run's seed for the same dataset. Mersenne-Twister streams from two
+different seeds are treated as independent, so the rerun draws its own
+bootstrap resamples (and, in cells 08, 09 and 11, its own simulated mediator
+values for the point estimate).
+"""
+
+TOOL_MODES: dict[str, tuple[str, ...]] = {
+    **{tool: MODES for tool in R_RUNNERS},
+    **{tool: ("primary",) for tool in RESEED_TOOLS},
+}
+"""Modes each tool writes. The noise-floor rerun needs the primary mode only."""
 
 COMBINATION_COLUMNS: tuple[str, str, str] = ("tool", "cell_id", "replicate")
 RAW_COLUMNS: tuple[str, ...] = (
@@ -212,10 +246,40 @@ def effect_truths(cell_id: str) -> dict[str, float]:
     return {name: truth[name] for name in definition.metric_names}
 
 
-def r_seed(analysis_seed: int | str) -> int:
-    """Return the R ``set.seed`` value derived from a dataset's analysis seed."""
+def base_tool(tool: str) -> str:
+    """The R runner (and support-matrix entry) behind ``tool``."""
 
-    return int(str(analysis_seed)) % SEED_MODULUS
+    if tool in R_RUNNERS:
+        return tool
+    if tool in RESEED_TOOLS:
+        return RESEED_TOOLS[tool]
+    raise ValueError(f"unknown tool {tool!r}; expected one of {TOOLS}")
+
+
+def tool_modes(tool: str) -> tuple[str, ...]:
+    """Modes ``tool`` writes (both for the comparators, primary only for a noise-floor rerun)."""
+
+    base_tool(tool)  # validates the id
+    return TOOL_MODES[tool]
+
+
+def seed_offset(tool: str) -> int:
+    """R seed offset of ``tool``: 0 for the comparators, RESEED_SEED_OFFSET for a noise-floor rerun."""
+
+    base_tool(tool)  # validates the id
+    return RESEED_SEED_OFFSET if tool in RESEED_TOOLS else 0
+
+
+def r_seed(analysis_seed: int | str, offset: int = 0) -> int:
+    """Return the R ``set.seed`` value derived from a dataset's analysis seed.
+
+    ``(analysis_seed + offset) mod (2^31 - 1)``. The comparators use offset 0,
+    the noise-floor rerun :data:`RESEED_SEED_OFFSET` (see :func:`seed_offset`).
+    """
+
+    if not 0 <= int(offset) < SEED_MODULUS:
+        raise ValueError("seed offset must lie in [0, 2^31 - 1)")
+    return (int(str(analysis_seed)) + int(offset)) % SEED_MODULUS
 
 
 @lru_cache(maxsize=1)
@@ -225,8 +289,8 @@ def load_support_matrix(path: str | None = None) -> dict[str, dict[str, Any]]:
     source = Path(path) if path is not None else SUPPORT_MATRIX_PATH
     payload = json.loads(source.read_text(encoding="utf-8"))
     tools = payload["tools"]
-    if set(tools) != set(TOOLS):
-        raise ValueError(f"support matrix must list exactly the tools {TOOLS}")
+    if set(tools) != set(R_RUNNERS):
+        raise ValueError(f"support matrix must list exactly the tools {R_RUNNERS}")
     matrix = {}
     for tool, entry in tools.items():
         supported = frozenset(entry["supported"])
@@ -238,12 +302,13 @@ def load_support_matrix(path: str | None = None) -> dict[str, dict[str, Any]]:
 
 
 def is_supported(tool: str, cell_id: str) -> bool:
-    return cell_id in load_support_matrix()[tool]["supported"]
+    return cell_id in load_support_matrix()[base_tool(tool)]["supported"]
 
 
 def not_estimable_reason(tool: str, cell_id: str) -> str:
-    reasons = load_support_matrix()[tool]["not_estimable"]
-    return reasons.get(cell_id, f"{cell_id} is not in the {tool} support matrix")
+    base = base_tool(tool)
+    reasons = load_support_matrix()[base]["not_estimable"]
+    return reasons.get(cell_id, f"{cell_id} is not in the {base} support matrix")
 
 
 def expected_combinations(config: ValidationConfig) -> set[tuple[str, str, int]]:
@@ -301,7 +366,8 @@ def comparator_record(
     return record
 
 
-def not_estimable_records(tool: str, cell_id: str, modes: Sequence[str] = MODES) -> dict[str, dict[str, Any]]:
+def not_estimable_records(tool: str, cell_id: str, modes: Sequence[str] | None = None) -> dict[str, dict[str, Any]]:
+    modes = tool_modes(tool) if modes is None else modes
     reason = not_estimable_reason(tool, cell_id)
     truths = effect_truths(cell_id)
     return {
@@ -362,14 +428,16 @@ def records_from_long(
     tool: str,
     cell_id: str,
     replicate: int,
-    modes: Sequence[str] = MODES,
+    modes: Sequence[str] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     """Build ``{mode: {effect: record}}`` for one dataset from the runner's long rows.
 
-    Every expected mode and effect gets a record; a row the runner did not
-    write becomes ``missing_output``. Returns the records and per-row details.
+    Every expected mode (default: :func:`tool_modes`) and effect gets a
+    record; a row the runner did not write becomes ``missing_output``. Returns
+    the records and per-row details.
     """
 
+    modes = tool_modes(tool) if modes is None else modes
     truths = effect_truths(cell_id)
     subset = long.loc[
         (long["tool"] == tool) & (long["cell_id"] == cell_id) & (long["replicate"].astype(int) == int(replicate))
@@ -453,7 +521,7 @@ def build_row(
         "replicate": int(replicate),
         "data_seed": str(data_seed),
         "analysis_seed": str(analysis_seed),
-        "r_seed": r_seed(analysis_seed),
+        "r_seed": r_seed(analysis_seed, seed_offset(tool)),
         "config_hash": config.config_hash,
         "supported": is_supported(tool, cell_id),
         "status": status,
@@ -519,18 +587,26 @@ def run_r_tool(
     *,
     boot_sims: int,
     qb_sims: int,
-    modes: Sequence[str] = MODES,
+    modes: Sequence[str] | None = None,
     timeout: float | None = None,
 ) -> tuple[pd.DataFrame | None, str | None]:
-    """Run one R runner; return its long output, or ``None`` and the failure message."""
+    """Run one tool's R runner; return its long output, or ``None`` and the failure message.
 
-    script = R_DIR / f"run_{tool}.R"
+    A noise-floor tool runs its base runner with ``--tool-id`` and
+    ``--seed-offset``, so its rows carry its own tool id and shifted seed.
+    """
+
+    base = base_tool(tool)
+    modes = tool_modes(tool) if modes is None else modes
+    script = R_DIR / f"run_{base}.R"
     command = [rscript, str(script), "--manifest", str(manifest_path), "--output", str(output_path),
                "--modes", ",".join(modes)]
-    if tool == "mediation":
+    if base == "mediation":
         command += ["--boot-sims", str(boot_sims), "--qb-sims", str(qb_sims)]
     else:
         command += ["--bootstrap", str(boot_sims)]
+    if tool != base:
+        command += ["--tool-id", tool, "--seed-offset", str(seed_offset(tool))]
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -641,7 +717,10 @@ def run(
         "qb_sims": int(qb_sims),
         "config_bootstrap_replicates": int(config.bootstrap_replicates),
         "modes": list(MODES),
-        "seed_rule": "set.seed(int(analysis_seed) mod 2147483647), Mersenne-Twister/Inversion/Rejection, before every fit",
+        "tool_modes": {tool: list(tool_modes(tool)) for tool in tools},
+        "seed_rule": "set.seed((int(analysis_seed) + offset) mod 2147483647), Mersenne-Twister/Inversion/Rejection, "
+                     "before every fit; offset 0 for the comparators, RESEED_SEED_OFFSET for a noise-floor rerun",
+        "seed_offsets": {tool: seed_offset(tool) for tool in tools},
     }
     base_provenance = {"settings": settings, "scripts_sha256": _script_hashes()}
 
@@ -765,7 +844,7 @@ def _run_tool_rows(
                     effect: comparator_record(truth, None, None, None, status="runner_failed", reason=failure)
                     for effect, truth in truths.items()
                 }
-                for mode in MODES
+                for mode in tool_modes(tool)
             }
             details: dict[str, Any] = {}
         else:
@@ -791,7 +870,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--replicate-start", type=int, default=0)
     parser.add_argument("--replicate-stop", type=int)
     parser.add_argument("--replicate-block", help="shard block INDEX:COUNT (or INDEXofCOUNT) of the replicates")
-    parser.add_argument("--tool", default="all", choices=[*TOOLS, "all"])
+    parser.add_argument("--tool", default="all", choices=[*TOOLS, "all"],
+                        help="tool id; 'all' runs the comparators and the noise-floor rerun")
     parser.add_argument("--rscript", help="path to Rscript (default: $MINTMED_RSCRIPT, then PATH)")
     parser.add_argument("--boot-sims", type=int, help="bootstrap refits (default: the config's bootstrap_replicates)")
     parser.add_argument("--qb-sims", type=int, default=QUASI_BAYES_SIMS)
@@ -834,6 +914,13 @@ if __name__ == "__main__":
 
 __all__ = [
     "COMBINATION_COLUMNS",
+    "RESEED_SEED_OFFSET",
+    "RESEED_TOOLS",
+    "R_RUNNERS",
+    "TOOL_MODES",
+    "base_tool",
+    "seed_offset",
+    "tool_modes",
     "EXACT_POINT_TOLERANCE",
     "MODES",
     "MONTE_CARLO_AVERAGE_SEEDS",

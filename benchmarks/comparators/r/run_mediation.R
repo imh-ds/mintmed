@@ -3,7 +3,13 @@
 # Usage:
 #   Rscript benchmarks/comparators/r/run_mediation.R --manifest DIR/manifest.json \
 #       --output OUT.csv [--cells ID,ID] [--modes primary,secondary] \
-#       [--boot-sims 399] [--qb-sims 1000]
+#       [--boot-sims 399] [--qb-sims 1000] [--tool-id mediation] [--seed-offset 0]
+#
+# --tool-id and --seed-offset serve the Stage 1 noise-floor rerun (T17-S7):
+# `--tool-id mediation_reseed --seed-offset 1000000007 --modes primary` refits
+# the same datasets with R seed (analysis_seed + offset) mod (2^31 - 1), so its
+# bootstrap resamples are independent of the primary run's. The support matrix
+# is always mediation's.
 #
 # For each dataset of a supported cell it fits the cell's declared node models
 # from cell.json (lm for gaussian nodes, glm(binomial("logit")) for bernoulli
@@ -216,7 +222,7 @@ run_mode <- function(context, cell, models, mode, settings, fit_seconds) {
 }
 
 process_dataset <- function(entry, root, support, settings, cells_cache) {
-  context <- dataset_context(entry, TOOL, "mediation")
+  context <- dataset_context(entry, settings$tool_id, "mediation", settings$seed_offset)
   cell <- cells_cache[[entry$cell_id]]
   effects <- unlist(cell$effects)
   rows <- list()
@@ -262,14 +268,20 @@ process_dataset <- function(entry, root, support, settings, cells_cache) {
 
 main <- function() {
   options <- parse_args(list(manifest = "", output = "", cells = "", modes = "primary,secondary",
-                             boot_sims = "399", qb_sims = "1000"))
+                             boot_sims = "399", qb_sims = "1000", tool_id = TOOL, seed_offset = "0"))
   if (!nzchar(options$manifest) || !nzchar(options$output)) stop("--manifest and --output are required")
   settings <- list(
     modes = split_list(options$modes),
     boot_sims = as.integer(options$boot_sims),
-    qb_sims = as.integer(options$qb_sims)
+    qb_sims = as.integer(options$qb_sims),
+    tool_id = options$tool_id,
+    seed_offset = parse_seed_offset(options$seed_offset)
   )
   if (!all(settings$modes %in% c("primary", "secondary"))) stop("--modes must be primary and/or secondary")
+  if (!grepl("^[a-z_]+$", settings$tool_id)) stop("--tool-id must be lower-case letters and underscores")
+  if (identical(settings$tool_id, TOOL) != (settings$seed_offset == 0)) {
+    stop("a seed offset needs its own --tool-id, and a non-default --tool-id needs a nonzero --seed-offset")
+  }
   root <- dirname(normalizePath(options$manifest, winslash = "/"))
   manifest <- read_manifest(options$manifest)
   support <- read_support()$tools[[TOOL]]
@@ -282,7 +294,7 @@ main <- function() {
   for (entry in entries) {
     result <- guarded(process_dataset(entry, root, support, settings, cells_cache))
     if (result$failed) {
-      context <- dataset_context(entry, TOOL, "mediation")
+      context <- dataset_context(entry, settings$tool_id, "mediation", settings$seed_offset)
       for (mode in settings$modes) for (effect in unlist(cells_cache[[entry$cell_id]]$effects)) {
         rows[[length(rows) + 1L]] <- new_row(context, mode, effect, status = "error",
           message = c("runner error", result$value$message))
@@ -292,7 +304,7 @@ main <- function() {
     }
   }
   write_long(rows, options$output)
-  cat(sprintf("mediation: wrote %d row(s) for %d dataset(s) to %s\n", length(rows), length(entries), options$output))
+  cat(sprintf("%s: wrote %d row(s) for %d dataset(s) to %s\n", settings$tool_id, length(rows), length(entries), options$output))
 }
 
 main()

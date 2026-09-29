@@ -80,7 +80,7 @@ def jobs(config_path: Path, output: Path) -> list[tuple[str, list[str]]]:
                 "--output", str(output / "mintmed" / shard), "--cell-id", cell,
                 "--replicate-block", f"{block}of{BLOCKS}", "--no-report",
             ]))
-            for tool in cb.TOOLS:
+            for tool in cb.R_RUNNERS:
                 if not cb.is_supported(tool, cell):
                     continue
                 items.append((f"{tool}/{shard}", [
@@ -144,7 +144,7 @@ def load(output: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     mintmed_paths = sorted((output / "mintmed").glob("*/raw_metrics.csv"))
     reference = rep.load_mintmed_reference(mintmed_paths)
     mintmed_raw = pd.concat([pd.read_csv(path) for path in mintmed_paths], ignore_index=True)
-    frames = [cb.read_raw(path) for tool in cb.TOOLS for path in sorted((output / tool).glob("*/raw_metrics.csv"))]
+    frames = [cb.read_raw(path) for tool in cb.R_RUNNERS for path in sorted((output / tool).glob("*/raw_metrics.csv"))]
     raw = pd.concat(frames, ignore_index=True)
     return reference, mintmed_raw, rep.expand_records(raw)
 

@@ -181,10 +181,23 @@ selected_datasets <- function(manifest, cells) {
   keep
 }
 
-dataset_context <- function(entry, tool, package) {
+# Seed offset of a noise-floor rerun (T17-S7): the rerun's seed is
+# (analysis_seed + offset) mod (2^31 - 1). Both terms are below 2^31, so the
+# sum is exact in a double. Python: (int(analysis_seed) + offset) % 2147483647.
+parse_seed_offset <- function(text) {
+  text <- as.character(text)
+  if (length(text) != 1L || !grepl("^[0-9]+$", text)) stop("--seed-offset must be a non-negative integer")
+  offset <- as.numeric(text)
+  if (offset >= SEED_MODULUS) stop("--seed-offset must be below 2147483647")
+  offset
+}
+
+offset_seed <- function(seed, offset = 0) as.integer((seed + offset) %% SEED_MODULUS)
+
+dataset_context <- function(entry, tool, package, seed_offset = 0) {
   list(
     tool = tool, cell_id = entry$cell_id, replicate = as.integer(entry$replicate),
-    r_seed = seed_from_decimal(entry$analysis_seed), data_seed = entry$data_seed,
+    r_seed = offset_seed(seed_from_decimal(entry$analysis_seed), seed_offset), data_seed = entry$data_seed,
     analysis_seed = entry$analysis_seed, sha256 = entry$sha256, package = package,
     package_version = as.character(utils::packageVersion(package))
   )

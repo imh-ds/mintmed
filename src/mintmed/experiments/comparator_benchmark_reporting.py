@@ -9,28 +9,49 @@ null-TNIE cells), failure rate and runtime.
 
 When Mintmed's raw rows are supplied (``mintmed_raw_paths``, or the
 ``MINTMED_REFERENCE_RAW`` environment variable holding paths separated by
-``os.pathsep``), it also applies the plan's ``stage1.comparison_rules`` to the
-primary mode of each comparator, paired by dataset. The gate and tier logic
-(``paired_comparison``, ``judge``, ``classify_tier``) is pure Python.
+``os.pathsep``), it also compares the primary mode of each comparator with
+Mintmed, paired by dataset. The gate and tier logic (``paired_comparison``,
+``classify_charter_tier``, and the original ``judge``/``classify_tier``) is
+pure Python.
 
-Interpretation choices (to be frozen in the Stage 1 charter, T17-S7):
+The verdict (``tier``) applies the frozen Stage 1 charter rules
+(:data:`CHARTER_RULES`, docs/validation/comparator_charter.md; owner decision
+2026-09-29, "noise-floor judging"):
 
-* Primary agreement metrics are judged on the lower Wilson bound of the
-  agreement rate (``tier``); ``tier_primary_on_point`` judges them on the
-  observed rate instead, because a Wilson lower bound of 0.99 needs about 380
-  significant pairs even with perfect agreement. Every guardrail loss is judged on the upper bound of a paired
-  percentile bootstrap interval (datasets resampled jointly, 2000 draws, seed
-  derived from the tool, cell and effect).
+* **Decision agreement** is judged on the *excess* decision disagreement:
+  disagreement(Mintmed, comparator) minus the noise floor
+  disagreement(mediation, mediation_reseed) on the same datasets, in
+  percentage points, on the upper bound of its paired bootstrap interval
+  (<= 5 pp negligible, <= 10 pp tolerable). A cell without a measured floor
+  (the ``mediation_reseed`` tool is not estimable there, i.e. lavaan in cell
+  07) uses a floor of zero, which can only make the verdict stricter.
+* **Directional check:** any pair significant in opposite directions makes
+  the cell-effect substantive.
+* **Sign agreement** (>= 0.99), **coverage loss** (point <= 2.5 pp and upper
+  bound <= 5 pp for negligible; upper bound <= 5 pp and Mintmed coverage
+  >= 0.90 for tolerable) and **false-positive excess** (null effects; <= 2 pp
+  negligible, <= 3 pp tolerable) are judged on observed values; their bounds
+  are reported.
+* **Power loss** (<= 5 / 10 pp), **width ratio** (<= 1.10 / 1.25) and **bias
+  excess** (<= 0.02 SD in both tiers) are judged on the upper bound of the
+  paired bootstrap interval (datasets resampled jointly, 2000 draws, seed
+  derived from the tool, cell, effect and metric).
 * A dataset whose interval is missing for either method counts as a decision
-  disagreement (conservative) and, as in Mintmed's gates, as noncoverage.
+  disagreement (conservative) and, as in Mintmed's gates, as noncoverage. In
+  the noise floor a dataset counts as a disagreement only when both runs have
+  an interval and their decisions differ, so a failed rerun can never raise
+  the floor.
 * Sign agreement is evaluated on the datasets where at least one method's
   interval excludes zero: the two point estimates must have the same sign.
-* Tolerable-tier limits the plan does not list (sign agreement, bias excess)
-  keep their negligible-tier values. ``coverage_abs_min`` applies to Mintmed's
-  coverage point estimate.
-* A check that cannot be computed (for example decision agreement for cell 10's
-  point-only ``TNIE_W0``/``TNIE_W1`` in Mintmed, or the width ratio of a
+* A check that cannot be computed (for example decision agreement for cell
+  10's point-only ``TNIE_W0``/``TNIE_W1`` in Mintmed, or the width ratio of a
   structural zero) is reported as not applicable and does not affect the tier.
+
+The original T17-S3 judging (:data:`COMPARISON_RULES`, agreement rates on the
+lower Wilson bound and every guardrail on its upper bound) is kept as the
+descriptive column ``tier_s3_rules``; the calibration
+(docs/validation/comparator_rule_calibration.md) showed that it fails methods
+that agree by construction.
 """
 
 from __future__ import annotations
@@ -50,10 +71,11 @@ from .comparator_benchmark import (
     COMBINATION_COLUMNS,
     ESTIMATED_STATUSES,
     FAILED_STATUSES,
-    MODES,
     RAW_COLUMNS,
+    RESEED_TOOLS,
     TOOLS,
     expected_combinations,
+    tool_modes,
 )
 from .mediation_validation import NULL_TNIE_CELL_IDS, ValidationConfig, cell_definition, seed_pair
 from .mediation_validation_reporting import wilson
@@ -95,6 +117,56 @@ _CHECKS: dict[str, tuple[str, str, str]] = {
     "width_ratio": ("width_ratio_max", "max", "upper"),
 }
 
+# Frozen Stage 1 charter rules (docs/validation/comparator_charter.md), owner
+# decision 2026-09-29 on docs/validation/comparator_rule_calibration.md,
+# "Recommendation for the Stage 1 charter". A limit missing from a tier is not
+# applied in that tier.
+CHARTER_RULES: dict[str, dict[str, float]] = {
+    "negligible": {
+        "decision_excess_pp_upper_max": 5.0,
+        "opposite_significant_pairs_max": 0,
+        "sign_agreement_min": 0.99,
+        "coverage_loss_pp_max": 2.5,
+        "coverage_loss_pp_upper_max": 5.0,
+        "false_positive_excess_pp_max": 2.0,
+        "power_loss_pp_upper_max": 5.0,
+        "width_ratio_upper_max": 1.10,
+        "bias_excess_sd_upper_max": 0.02,
+    },
+    "tolerable": {
+        "decision_excess_pp_upper_max": 10.0,
+        "opposite_significant_pairs_max": 0,
+        "sign_agreement_min": 0.99,
+        "coverage_loss_pp_upper_max": 5.0,
+        "coverage_abs_min": 0.90,
+        "false_positive_excess_pp_max": 3.0,
+        "power_loss_pp_upper_max": 10.0,
+        "width_ratio_upper_max": 1.25,
+        "bias_excess_sd_upper_max": 0.02,
+    },
+}
+# check name -> (comparison field judged, direction, limit key)
+CHARTER_CHECKS: dict[str, tuple[str, str, str]] = {
+    "decision_excess": ("decision_excess_pp_upper", "max", "decision_excess_pp_upper_max"),
+    "opposite_significant": ("opposite_significant_pairs", "max", "opposite_significant_pairs_max"),
+    "sign_agreement": ("sign_agreement", "min", "sign_agreement_min"),
+    "coverage_loss": ("coverage_loss_pp", "max", "coverage_loss_pp_max"),
+    "coverage_loss_upper": ("coverage_loss_pp_upper", "max", "coverage_loss_pp_upper_max"),
+    "coverage_abs": ("mintmed_coverage", "min", "coverage_abs_min"),
+    "false_positive_excess": ("false_positive_excess_pp", "max", "false_positive_excess_pp_max"),
+    "power_loss": ("power_loss_pp_upper", "max", "power_loss_pp_upper_max"),
+    "width_ratio": ("width_ratio_upper", "max", "width_ratio_upper_max"),
+    "bias_excess": ("bias_excess_sd_upper", "max", "bias_excess_sd_upper_max"),
+}
+LIMIT_TOLERANCE = 1e-9
+"""Slack when comparing a value with a limit, so that a count landing exactly on
+a limit (e.g. 10 of 500 = 2.0 pp) is not failed by floating-point rounding."""
+
+NOISE_FLOOR_TOOL: dict[str, str] = {base: reseed for reseed, base in RESEED_TOOLS.items()}
+"""Base comparator -> its noise-floor rerun (``mediation`` -> ``mediation_reseed``)."""
+FLOOR_REFERENCE = ("mediation", "mediation_reseed")
+"""The (primary, rerun) pair whose disagreement is the noise floor for every comparator in a cell."""
+
 
 def _as_bool(value: Any) -> bool:
     if isinstance(value, str):
@@ -123,7 +195,7 @@ def expand_records(raw: pd.DataFrame) -> pd.DataFrame:
         cell_id = str(source.cell_id)
         definition = cell_definition(cell_id)
         records = json.loads(str(source.records_json))
-        if set(records) != set(MODES):
+        if set(records) != set(tool_modes(str(source.tool))):
             raise ValueError(f"{source.tool}/{cell_id}/{source.replicate}: records_json modes {sorted(records)}")
         for mode, effects in records.items():
             if set(effects) != set(definition.metric_names):
@@ -348,12 +420,19 @@ def paired_comparison(
     effect: str,
     population_sd: float | None,
     null_effect: bool,
+    noise_floor: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
-    """Compute the plan's primary metrics and guardrail losses for one cell-effect.
+    """Compute the primary metrics and guardrail losses for one cell-effect.
 
     ``mintmed`` and ``comparator`` hold one row per replicate with columns
     ``estimate, bias, lower, upper, coverage, width, zero_exclusion,
     interval_available``; they are paired by ``replicate``.
+
+    ``noise_floor`` (from :func:`noise_floor_frame`) holds one row per
+    replicate with ``floor_disagree`` (1.0 when the two noise-floor runs both
+    have an interval and their decisions differ). Without it the floor is zero.
+    The excess decision disagreement is judged on the datasets present in all
+    three frames.
     """
 
     key = f"{tool}|{cell_id}|{effect}"
@@ -376,9 +455,14 @@ def paired_comparison(
         result.update(_check_fields("sign_agreement", int((either & signs_equal).sum()), int(either.sum())))
         result["significant_pairs"] = int(either.sum())
         result["opposite_significant_pairs"] = int((np.nan_to_num(decision_m) * np.nan_to_num(decision_c) == -1.0).sum())
+        result.update(_decision_excess(merged, (~agree).astype(float), noise_floor, key))
     else:
         result.update(_not_applicable("decision_agreement"))
         result.update(_not_applicable("sign_agreement"))
+        result.update(_not_applicable("decision_excess_pp"))
+        result.update({"significant_pairs": None, "opposite_significant_pairs": None,
+                       "decision_disagreement_pp": None, "noise_floor_pp": None, "noise_floor_pairs": 0,
+                       "noise_floor_measured": False, "decision_excess_pairs": 0})
 
     # Guardrails: paired bootstrap over datasets.
     finite = merged["bias_m"].notna() & merged["bias_c"].notna() if n else pd.Series(dtype=bool)
@@ -446,6 +530,56 @@ def paired_comparison(
             result.update(_not_applicable(name))
         result["mintmed_coverage"] = None
     return result
+
+
+def noise_floor_frame(primary: pd.DataFrame, rerun: pd.DataFrame) -> pd.DataFrame:
+    """Per-replicate noise-floor indicator from two runs of one method on the same datasets.
+
+    ``floor_disagree`` is 1.0 when both runs have an interval and their
+    zero-exclusion decisions differ, else 0.0. A missing interval never counts
+    as a floor disagreement: that could only raise the floor and so loosen
+    the excess-disagreement rule.
+    """
+
+    merged = primary[["replicate", "lower", "upper"]].merge(
+        rerun[["replicate", "lower", "upper"]], on="replicate", suffixes=("_a", "_b"), how="inner"
+    )
+    first = decisions(merged["lower_a"], merged["upper_a"])
+    second = decisions(merged["lower_b"], merged["upper_b"])
+    disagree = np.isfinite(first) & np.isfinite(second) & (first != second)
+    return pd.DataFrame({"replicate": merged["replicate"].to_numpy(), "floor_disagree": disagree.astype(float)})
+
+
+def _excess_pp(disagree: np.ndarray, floor: np.ndarray) -> float:
+    return 100.0 * (float(np.mean(disagree)) - float(np.mean(floor)))
+
+
+def _decision_excess(merged: pd.DataFrame, disagree: np.ndarray, noise_floor: pd.DataFrame | None,
+                     key: str) -> dict[str, Any]:
+    frame = pd.DataFrame({"replicate": merged["replicate"].to_numpy(), "disagree": np.asarray(disagree, float)})
+    measured = noise_floor is not None and not noise_floor.empty
+    if measured:
+        frame = frame.merge(noise_floor[["replicate", "floor_disagree"]], on="replicate", how="inner")
+    else:
+        frame["floor_disagree"] = 0.0
+    floor_pp: float | None = 0.0  # no measured floor: zero, the strict choice
+    if measured:
+        floor_pp = 100.0 * float(frame["floor_disagree"].mean()) if len(frame) else None
+    fields = {
+        "decision_disagreement_pp": 100.0 * float(np.mean(disagree)) if len(disagree) else None,
+        "noise_floor_measured": bool(measured),
+        "noise_floor_pairs": int(len(frame)) if measured else 0,
+        "noise_floor_pp": floor_pp,
+        "decision_excess_pairs": int(len(frame)),
+    }
+    fields.update(
+        _interval_fields(
+            "decision_excess_pp",
+            _paired_bootstrap(_excess_pp, [frame["disagree"].to_numpy(float), frame["floor_disagree"].to_numpy(float)],
+                              key + "|decision_excess"),
+        )
+    )
+    return fields
 
 
 def _check_fields(name: str, successes: int, trials: int) -> dict[str, Any]:
@@ -533,11 +667,78 @@ def classify_tier(
     }
 
 
+def judge_charter(comparison: Mapping[str, Any], limits: Mapping[str, float]) -> dict[str, bool | None]:
+    """Pass/fail of every charter check against one tier's ``limits`` (None = not applicable)."""
+
+    verdicts: dict[str, bool | None] = {}
+    for check, (field, direction, limit_key) in CHARTER_CHECKS.items():
+        value = comparison.get(field)
+        if limit_key not in limits or value is None or (isinstance(value, float) and math.isnan(value)):
+            verdicts[check] = None
+            continue
+        limit = float(limits[limit_key])
+        value = float(value)
+        verdicts[check] = (value >= limit - LIMIT_TOLERANCE) if direction == "min" else (value <= limit + LIMIT_TOLERANCE)
+    return verdicts
+
+
+def classify_charter_tier(
+    comparison: Mapping[str, Any], rules: Mapping[str, Mapping[str, float]] = CHARTER_RULES
+) -> dict[str, Any]:
+    """Frozen Stage 1 verdict: ``negligible``, ``tolerable`` or ``substantive`` with per-check verdicts.
+
+    Negligible when no negligible-tier check fails; else tolerable when no
+    tolerable-tier check fails; else substantive. A pair significant in
+    opposite directions fails both tiers.
+    """
+
+    negligible = judge_charter(comparison, rules["negligible"])
+    tolerable = judge_charter(comparison, rules["tolerable"])
+    if all(value is not False for value in negligible.values()):
+        tier = "negligible"
+    elif all(value is not False for value in tolerable.values()):
+        tier = "tolerable"
+    else:
+        tier = "substantive"
+    return {
+        "tier": tier,
+        "negligible_checks": negligible,
+        "tolerable_checks": tolerable,
+        "failed_negligible": sorted(name for name, value in negligible.items() if value is False),
+        "failed_tolerable": sorted(name for name, value in tolerable.items() if value is False),
+        "applicable_checks": sorted(
+            name for name in CHARTER_CHECKS if negligible.get(name) is not None or tolerable.get(name) is not None
+        ),
+    }
+
+
+def _primary_effect_frame(long: pd.DataFrame, tool: str, cell_id: str, effect: str) -> pd.DataFrame:
+    return long.loc[(long["mode"] == "primary") & (long["tool"] == tool) & (long["cell_id"] == cell_id)
+                    & (long["effect"] == effect)]
+
+
+def floor_for(long: pd.DataFrame, cell_id: str, effect: str) -> pd.DataFrame | None:
+    """The cell-effect's noise floor (mediation vs mediation_reseed), or None if it was not measured."""
+
+    primary_tool, rerun_tool = FLOOR_REFERENCE
+    primary = _primary_effect_frame(long, primary_tool, cell_id, effect)
+    rerun = _primary_effect_frame(long, rerun_tool, cell_id, effect)
+    if primary.empty or rerun.empty:
+        return None
+    if (primary["status"] == "not_estimable").all() or (rerun["status"] == "not_estimable").all():
+        return None
+    return noise_floor_frame(primary, rerun)
+
+
 def compare_with_mintmed(long: pd.DataFrame, reference: pd.DataFrame) -> pd.DataFrame:
-    """Paired comparisons of every comparator's primary mode with Mintmed."""
+    """Paired comparisons of every comparator's primary mode with Mintmed, judged by the charter rules.
+
+    The noise-floor reruns (``RESEED_TOOLS``) are not compared with Mintmed;
+    they supply the floor of every comparator's excess decision disagreement.
+    """
 
     rows = []
-    primary = long.loc[long["mode"] == "primary"]
+    primary = long.loc[(long["mode"] == "primary") & ~long["tool"].isin(list(RESEED_TOOLS))]
     for (tool, cell_id, effect), group in primary.groupby(["tool", "cell_id", "effect"], sort=True):
         if (group["status"] == "not_estimable").all():
             continue
@@ -548,15 +749,17 @@ def compare_with_mintmed(long: pd.DataFrame, reference: pd.DataFrame) -> pd.Data
         comparison = paired_comparison(
             mine, group, tool=str(tool), cell_id=str(cell_id), effect=str(effect),
             population_sd=definition.population_outcome_sd, null_effect=is_null_effect(str(cell_id), str(effect)),
+            noise_floor=floor_for(long, str(cell_id), str(effect)),
         )
-        tier = classify_tier(comparison)
-        comparison["tier"] = tier["tier"]
-        # Descriptive alternative for the charter decision: agreement rates on
-        # their observed value (a Wilson lower bound >= 0.99 needs roughly 380
-        # significant pairs even with perfect sign agreement).
-        comparison["tier_primary_on_point"] = classify_tier(comparison, primary_basis="point")["tier"]
+        verdict = classify_charter_tier(comparison)
+        comparison["tier"] = verdict["tier"]
+        comparison["failed_negligible"] = ",".join(verdict["failed_negligible"])
+        comparison["failed_tolerable"] = ",".join(verdict["failed_tolerable"])
+        # Descriptive only: the original T17-S3 judging (agreement rates on the
+        # lower Wilson bound, every guardrail on its upper bound).
+        comparison["tier_s3_rules"] = classify_tier(comparison)["tier"]
         comparison["checks_json"] = json.dumps(
-            {"negligible": tier["negligible_checks"], "tolerable": tier["tolerable_checks"]}, sort_keys=True
+            {"negligible": verdict["negligible_checks"], "tolerable": verdict["tolerable_checks"]}, sort_keys=True
         )
         rows.append(comparison)
     return pd.DataFrame(rows)
@@ -638,25 +841,34 @@ def _markdown(summary: pd.DataFrame, comparisons: pd.DataFrame, raw: pd.DataFram
         lines += ["No Mintmed reference rows were supplied, so no paired comparison was made.", ""]
     else:
         lines += [
-            "Primary metrics are judged on the lower Wilson bound; guardrail losses on the upper bound of a paired "
-            "percentile bootstrap interval. `n/a` marks a check that does not apply.",
+            "Tier = the frozen Stage 1 charter rules (docs/validation/comparator_charter.md). Decision agreement is "
+            "judged on the upper bound of the excess disagreement over the `mediation` vs `mediation_reseed` noise "
+            "floor (floor 0 where it was not measured, marked `none`); any pair significant in opposite directions "
+            "is substantive; sign agreement, coverage loss (point and upper) and false-positive excess on observed "
+            "values; power loss, width ratio and bias excess on the upper bound of a paired bootstrap interval. "
+            "Cells show point (upper bound) or point [lower, upper]. `n/a` marks a check that does not apply. "
+            "`S3 tier` is the original T17-S3 judging, descriptive only.",
             "",
-            "| Tool | Cell | Effect | Pairs | Decision agr. (lower) | Sign agr. (lower) | Bias excess SD (upper) | "
-            "Coverage loss pp (upper) | FP excess pp (upper) | Power loss pp (upper) | Width ratio (upper) | Tier | "
-            "Tier (agreement on point) |",
-            "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+            "| Tool | Cell | Effect | Pairs | Disagreement pp | Floor pp | Excess pp [lower, upper] | Opposite sig. | "
+            "Sign agr. (sig. pairs) | Bias excess SD (upper) | Coverage loss pp (upper) | FP excess pp (upper) | "
+            "Power loss pp (upper) | Width ratio (upper) | Mintmed cov. | Tier | Failed checks | S3 tier |",
+            "|---|---|---|---:|---:|---:|---|---:|---|---|---|---|---|---|---:|---|---|---|",
         ]
         for row in comparisons.to_dict(orient="records"):
+            floor = _format(row.get("noise_floor_pp")) if row.get("noise_floor_measured") else "none"
+            failed = row.get("failed_negligible") or ""
             lines.append(
                 f"| {row['tool']} | {row['cell_id']} | {row['effect']} | {row['pairs']} | "
-                f"{_format(row['decision_agreement'])} ({_format(row['decision_agreement_lower'])}) | "
-                f"{_format(row['sign_agreement'])} ({_format(row['sign_agreement_lower'])}) | "
+                f"{_format(row.get('decision_disagreement_pp'))} | {floor} | "
+                f"{_format(row.get('decision_excess_pp'))} [{_format(row.get('decision_excess_pp_lower'))}, "
+                f"{_format(row.get('decision_excess_pp_upper'))}] | {_format(row.get('opposite_significant_pairs'))} | "
+                f"{_format(row['sign_agreement'])} ({_format(row.get('significant_pairs'))}) | "
                 f"{_format(row['bias_excess_sd'])} ({_format(row['bias_excess_sd_upper'])}) | "
                 f"{_format(row['coverage_loss_pp'])} ({_format(row['coverage_loss_pp_upper'])}) | "
                 f"{_format(row['false_positive_excess_pp'])} ({_format(row['false_positive_excess_pp_upper'])}) | "
                 f"{_format(row['power_loss_pp'])} ({_format(row['power_loss_pp_upper'])}) | "
-                f"{_format(row['width_ratio'])} ({_format(row['width_ratio_upper'])}) | {row['tier']} | "
-                f"{row['tier_primary_on_point']} |"
+                f"{_format(row['width_ratio'])} ({_format(row['width_ratio_upper'])}) | "
+                f"{_format(row.get('mintmed_coverage'))} | **{row['tier']}** | {failed or '-'} | {row['tier_s3_rules']} |"
             )
         lines.append("")
     return "\n".join(lines)
@@ -717,7 +929,9 @@ def write_report(
         "tools": list(TOOLS),
         "row_status_counts": {f"{tool}:{status}": int(count) for (tool, status), count in raw.groupby(["tool", "status"]).size().items()},
         "settings_notes": notes,
-        "comparison_rules": COMPARISON_RULES,
+        "charter_rules": CHARTER_RULES,
+        "comparison_rules_s3": COMPARISON_RULES,
+        "noise_floor": {"primary": FLOOR_REFERENCE[0], "rerun": FLOOR_REFERENCE[1]},
         "reference_paths": [path.name for path in reference_paths],
         "summaries": _json_safe(summary.to_dict(orient="records")),
         "paired_comparisons": _json_safe(comparisons.to_dict(orient="records")),
@@ -749,7 +963,13 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "CHARTER_CHECKS",
+    "CHARTER_RULES",
     "COMPARISON_RULES",
+    "classify_charter_tier",
+    "floor_for",
+    "judge_charter",
+    "noise_floor_frame",
     "classify_tier",
     "compare_with_mintmed",
     "decisions",

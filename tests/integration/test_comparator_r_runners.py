@@ -68,10 +68,12 @@ def _ols(y: np.ndarray, columns: list[np.ndarray]) -> np.ndarray:
 
 def test_every_dataset_mode_and_effect_has_a_row(outputs) -> None:
     for tool, long in outputs.items():
+        assert set(long["tool"]) == {tool}
         for cell in CELLS:
             effects = cb.effect_truths(cell)
             subset = long.loc[long["cell_id"] == cell]
-            assert len(subset) == 2 * len(cb.MODES) * len(effects)
+            assert len(subset) == 2 * len(cb.tool_modes(tool)) * len(effects)
+            assert set(subset["mode"]) == set(cb.tool_modes(tool))
             statuses = set(subset["status"])
             if cb.is_supported(tool, cell):
                 assert statuses <= {"ok", "ok_warnings"}, subset[["mode", "effect", "status", "message"]]
@@ -82,9 +84,24 @@ def test_every_dataset_mode_and_effect_has_a_row(outputs) -> None:
 
 
 def test_seed_rule_matches_python(outputs) -> None:
-    for long in outputs.values():
+    for tool, long in outputs.items():
         for row in long.itertuples():
-            assert int(row.r_seed) == cb.r_seed(row.analysis_seed)
+            assert int(row.r_seed) == cb.r_seed(row.analysis_seed, cb.seed_offset(tool))
+
+
+def test_noise_floor_rerun_redraws_the_bootstrap_only(outputs) -> None:
+    primary = outputs["mediation"].loc[outputs["mediation"]["mode"] == "primary"].reset_index(drop=True)
+    rerun = outputs["mediation_reseed"].reset_index(drop=True)
+    keys = ["cell_id", "replicate", "effect"]
+    merged = primary.merge(rerun, on=keys, suffixes=("_p", "_r"))
+    assert len(merged) == len(rerun) == len(primary)
+    assert (merged["r_seed_p"] != merged["r_seed_r"]).all()
+    assert (merged["dataset_sha256_p"] == merged["dataset_sha256_r"]).all()
+    # Linear in M (cells 01, 10): the point estimate is the exact plug-in value, so it is unchanged ...
+    linear = merged.loc[merged["cell_id"].isin(["cell01_linear_n100", "cell10_moderated_n150"])]
+    assert np.allclose(linear["estimate_p"].map(float), linear["estimate_r"].map(float), rtol=0, atol=1e-10)
+    # ... while the bootstrap resamples, hence the interval endpoints, differ.
+    assert (linear["lower_p"].map(float) != linear["lower_r"].map(float)).mean() > 0.9
 
 
 def test_linear_cell_estimates_are_ols_path_products(outputs, exported: Path) -> None:
@@ -152,5 +169,6 @@ def test_python_runner_end_to_end(tmp_path: Path) -> None:
     status = dict(zip(raw["tool"], raw["status"], strict=True))
     assert status["lavaan"] == "not_estimable"
     assert status["mediation"] in {"ok", "ok_warnings"}
+    assert status["mediation_reseed"] in {"ok", "ok_warnings"}
     summary = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
     assert "bootstrap refits 29" in summary  # non-frozen settings are flagged
