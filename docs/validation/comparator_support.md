@@ -333,7 +333,43 @@ quasi-Bayesian simulations. The comparison uses Mintmed's run-2 point estimates
 - **Cell 10 (moderated), replicate 0.** Both tools reproduce Mintmed's
   `TNIE_W0`, `TNIE_W1` and `TNIE_difference` to about 1e-15.
 
-T17-S5 will freeze the formal harness tolerances.
+**Harness tolerances (T17-S5).** They are declared in
+`comparator_benchmark.py`:
+
+- `EXACT_POINT_TOLERANCE = 1e-8`: lavaan in both modes, and bootstrap-mode
+  mediate in the linear-in-M cells.
+- `QUASI_BAYES_TOLERANCE_MULTIPLIER = 5`: five times the quasi-Bayesian
+  point's Monte Carlo SE, estimated as the percentile-interval width / 3.92 /
+  √sims.
+- For cells 08, 09 and 11: a 200-seed average of the bootstrap-mode point
+  must lie within 4 SE of Mintmed. PNDE there must be exact.
+
+`tests/integration/test_comparator_harness.py` enforces them on replicates
+0–4 of every all-linear cell. It compares against Mintmed recomputed on the
+exported datasets.
+
+Local run on 2026-09-28:
+
+| Check | Result |
+|---|---|
+| lavaan, both modes | max \|Δ\| 1.1e-15 |
+| mediate bootstrap mode | max \|Δ\| 2.4e-15 |
+| mediate quasi-Bayesian mode | largest \|Δ\| / tolerance 0.70 |
+
+Seed averages on replicate 0 (a harness check, not a verdict):
+
+| Cell | Seed-average TNIE − Mintmed | Tolerance |
+|---|---:|---:|
+| 08 | +0.0014 | 0.0054 |
+| 09 | −0.0016 | 0.0088 |
+| 11 | −0.0009 | 0.0120 |
+
+The fresh Mintmed points also match the stored run-2 rows, within 1e-8. The CI job
+`r-comparators-env` runs these tests with `MINTMED_REQUIRE_R=1`, so they
+cannot skip there.
+
+The feasibility of the Stage 1 comparison rules is calibrated separately in
+`comparator_rule_calibration.md`.
 
 ## Runtime
 
