@@ -153,6 +153,8 @@ Intervals come from a participant bootstrap. Every node is refitted on each resa
 
 So in designs like this, about 6–8% of truly null indirect effects will look significant, not 5%. Of the alternative intervals checked, only one reduced the rate, and it cost a large loss of power in ordinary designs, so Mintmed keeps the percentile interval. Larger samples have not been checked. Details are in [`validation/baseline_evidence.md`](validation/baseline_evidence.md#known-limitations).
 
+**Update (Task 17 Stage 1).** R `mediation::mediate()` and lavaan, run on the same datasets with the same kind of percentile bootstrap, show the same excess: 8.2% and 7.2% against Mintmed's 7.8%. So this is a property of percentile-bootstrap intervals in this design, not of Mintmed. At N = 250, every tool, Mintmed included, was at 4.2–5.4%. See [`validation/comparator_results.md`](validation/comparator_results.md#mixed-null-comparison).
+
 **How serious is it?** It is real, but it is not a reason to avoid Mintmed:
 - the excess is about 2 extra false positives per 100 analyses, and only in this one kind of design;
 - estimates and coverage were unaffected;
@@ -202,6 +204,8 @@ An unavailable interval is never evidence of a null effect.
 - Gaussian and Bernoulli nodes;
 - one to four mediators;
 - independent participant rows.
+
+**Compared with other software:** on correctly specified models, Mintmed's results matched R `mediation::mediate()` and lavaan in 68 of 72 pre-registered comparisons ([`validation/comparator_results.md`](validation/comparator_results.md)). In the other four, all indirect effects with a curved outcome or a binary mediator, Mintmed's intervals were narrower and near 95% coverage while `mediate()`'s over-covered. That is a parity check, not evidence that Mintmed is better. Misspecified models have not been compared.
 
 **Checked by simulation:** only the 14 cells in the evidence report. Neither pre-registered run fully passed: run 1 failed its coverage check, and run 2 failed its check for false indirect effects in mixed-null designs (see above).
 

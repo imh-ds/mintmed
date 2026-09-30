@@ -1154,6 +1154,24 @@ Each task entry should record:
   - `outline/06_resolution_information_guided_mediation.md` (resolution and the Task 18 design).
 - **Follow-up:** the reviewer responds to `06` section 6 before the Task 18 charter freezes.
 
+### Task 17 — Stage 1 comparator benchmark completed
+
+- **Date:** 2026-09-29
+- **Task:** Task 17 — Benchmark Mintmed against R mediation and lavaan path models (Stage 1 only; Stage 2 merged into Task 18).
+- **Status:** Completed.
+- **Decision:** Record the Stage 1 result under the frozen charter. Cancel S10 and S11 (Stage 2), which the owner merged into Task 18.
+- **Evidence:**
+  - Runs `36636602823` (R comparators and the `mediate()` noise-floor rerun, 24,000 rows) and `36636611981` (Mintmed cells 15 and 16, 1,000 rows), from commit `1c0d353`. Both are valid under the charter. Compute was 27.31 CPU-h of 36.
+  - Of 72 judged cell-effects: 68 negligible, 2 tolerable, 2 substantive. There were 0 opposite-sign significant pairs.
+  - The non-negligible verdicts are the TNIE in cells 08, 09 and 11, the cells where `mediate()` simulates its point estimate. There Mintmed was near 95% coverage with narrower intervals and more power, while `mediate()` over-covered at 97–98%.
+  - The mixed-null TNIE false-positive excess at N = 100 is shared by every tool: Mintmed 7.8%, `mediate()` 8.2%, lavaan 7.2%. At N = 250 all tools were at 4.2–5.4%.
+- **Lesson for later charters:** the frozen coverage check counted comparator over-coverage against Mintmed. Future charters should judge coverage by distance from nominal, not by the difference between tools.
+- **Files:**
+  - `docs/validation/comparator_charter.md`;
+  - `docs/validation/comparator_results.md`;
+  - `README.md`, `docs/validation/baseline_evidence.md`, `docs/user-guide.md` (updated);
+  - `benchmarks/benchmark_log.md`, rows 9–12.
+
 ## Reusable entry template
 
 ### Task NN — Name
