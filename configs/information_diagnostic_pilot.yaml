@@ -1,0 +1,32 @@
+# Task 18 Phase 1 (T18-S4): GitHub runtime pilot. Timing only, not evidence.
+# Pilot seed 20260930 is neither the calibration seed (20261001) nor the
+# evaluation seed (20261002), so no calibration or evaluation dataset is
+# analysed by the pilot. Analysis settings are those of
+# configs/information_diagnostic_calibration.yaml.
+schema_version: 1
+experiment: mintmed_information_diagnostic_pilot
+purpose: runtime_pilot
+master_seed: 20260930
+replicates: 4
+sample_sizes: [100, 250, 500]
+mechanisms:
+  - N1_linear
+  - N2_curved_declared
+  - N3_ties
+  - N4_heavy_tail
+  - A1_c_only
+  - V1_outcome_variance
+  - E1_omitted_quadratic
+  - E2_omitted_interaction
+  - E3_mediator_variance
+information:
+  permutations: 199
+  k_cmi_fraction: 0.1
+  k_perm: 5
+  folds: 5
+  residuals: cross_fitted
+  sensitivities: true
+  sensitivity_k_cmi_fraction: 0.2
+conventional:
+  alpha: 0.05
+  spline_df: 3

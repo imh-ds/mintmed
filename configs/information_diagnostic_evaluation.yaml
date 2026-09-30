@@ -1,0 +1,32 @@
+# Task 18 Phase 1 (T18-S6): evaluation run of the information and
+# conventional C2 diagnostics at the frozen thresholds (thresholds are applied
+# at analysis time, not here). Written in T18-S4 and NOT run before the S5
+# charter freezes. Evaluation seed 20261002; analysis settings identical to
+# configs/information_diagnostic_calibration.yaml.
+schema_version: 1
+experiment: mintmed_information_diagnostic_evaluation
+purpose: evaluation
+master_seed: 20261002
+replicates: 500
+sample_sizes: [100, 250, 500]
+mechanisms:
+  - N1_linear
+  - N2_curved_declared
+  - N3_ties
+  - N4_heavy_tail
+  - A1_c_only
+  - V1_outcome_variance
+  - E1_omitted_quadratic
+  - E2_omitted_interaction
+  - E3_mediator_variance
+information:
+  permutations: 199
+  k_cmi_fraction: 0.1
+  k_perm: 5
+  folds: 5
+  residuals: cross_fitted
+  sensitivities: true
+  sensitivity_k_cmi_fraction: 0.2
+conventional:
+  alpha: 0.05
+  spline_df: 3
