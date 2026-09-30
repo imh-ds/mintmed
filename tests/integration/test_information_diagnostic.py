@@ -164,3 +164,31 @@ def test_warning_rule_counts_unavailable_as_no_warning() -> None:
     assert rep.arm_warnings(frame, "information", 0.05).tolist() == [True, True, False, False]
     low, high = rep.wilson(0, 200)
     assert low == pytest.approx(0.0, abs=1e-12) and 0.0 < high < 0.02
+
+
+def test_threshold_rule_takes_the_worst_null_cell() -> None:
+    from scripts.calibrate_diagnostic_thresholds import false_warning_curves, match_thresholds, rates_at_thresholds
+
+    rows = []
+    for i in range(1, 101):
+        # N1: anti-conservative (p = i / 200); N3: conservative (p > 0.5).
+        for mechanism, p in (("N1_linear", i / 200), ("N3_ties", 0.5 + i / 250)):
+            rows.append(
+                {"mechanism": mechanism, "n": 100, "replicate": i, "node": "outcome",
+                 "info_p_value": p, "info_status": "ok", "lof_min_adjusted_p": p, "lof_status": "ok",
+                 "info_insample_p_value": p, "info_insample_status": "ok",
+                 "info_k20_p_value": None, "info_k20_status": "diagnostic_unavailable"}
+            )
+    raw = pd.DataFrame(rows)
+    thresholds = match_thresholds(false_warning_curves(raw))
+    info = thresholds["information:outcome"]
+    # N1 rate floor(200 t) / 100 <= 0.05 needs t < 0.030; the pooled rate allows t < 0.055.
+    assert info["frozen_threshold"] == pytest.approx(0.029)
+    assert info["pooled_rule_threshold"] == pytest.approx(0.054)
+    assert info["binding_cell"]["mechanism"] == "N1_linear"
+    assert info["per_n_thresholds"]["100"] == pytest.approx(0.029)
+    # An always-unavailable arm never warns, so the largest grid value passes.
+    assert thresholds["information_k20:outcome"]["frozen_threshold"] == pytest.approx(0.2)
+    rates = rates_at_thresholds(raw, thresholds)
+    n1 = rates.loc[(rates["arm"] == "information") & (rates["mechanism"] == "N1_linear")].iloc[0]
+    assert n1["warnings"] == 5 and n1["rate"] == pytest.approx(0.05)
