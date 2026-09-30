@@ -39,11 +39,16 @@ Mediator node (e.g. ``"M ~ A + C"``), tested parent ``A``:
 ``mean_curvature_C``
     As ``mean_curvature_M`` but for the spline in C. ``A`` is binary, so a
     curvature term in A does not exist and none is tested.
+``mean_interaction_AC``
+    Nested partial F test adding the product ``A * C``: the candidate term
+    that involves the tested parent A (an A-specific slope in C). It is
+    ``not_applicable`` when there is no conditioning covariate or the base
+    design already spans the product (e.g. ``A:C`` in the formula).
 ``variance_BP``
     As above, on ``[1, A, C]``.
 
 With ``conditioning=()`` the C terms are simply absent (``mean_curvature_C``
-is ``not_applicable``). More than one conditioning column returns
+and ``mean_interaction_AC`` are ``not_applicable``). More than one conditioning column returns
 ``diagnostic_unavailable`` to match the information arm's scope.
 
 All tests use the in-sample residuals of the base OLS fit: F and
@@ -224,6 +229,17 @@ def _f_component(name: str, base, added, response) -> dict[str, Any]:
     }
 
 
+def _no_covariate(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "statistic": math.nan,
+        "df": (0, 0),
+        "p_value": math.nan,
+        "status": COMPONENT_NOT_APPLICABLE,
+        "reason": "no conditioning covariate",
+    }
+
+
 def lack_of_fit_battery(
     data: pd.DataFrame,
     formula: str,
@@ -291,16 +307,15 @@ def lack_of_fit_battery(
                 )
             )
         else:
+            raw.append(_no_covariate("mean_curvature_C"))
+        if covariates:
             raw.append(
-                {
-                    "name": "mean_curvature_C",
-                    "statistic": math.nan,
-                    "df": (0, 0),
-                    "p_value": math.nan,
-                    "status": COMPONENT_NOT_APPLICABLE,
-                    "reason": "no conditioning covariate",
-                }
+                _f_component(
+                    "mean_interaction_AC", base, (a * covariates[0])[:, None], response
+                )
             )
+        else:
+            raw.append(_no_covariate("mean_interaction_AC"))
         het = np.column_stack([a, *covariates])
     lm, df_bp, p_bp = breusch_pagan_koenker(residuals, het)
     raw.append(

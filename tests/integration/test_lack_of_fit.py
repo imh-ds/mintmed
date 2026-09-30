@@ -27,11 +27,12 @@ def _data(
     interaction: float = 0.0,
     y_sd_a: float = 0.0,
     m_sd_a: float = 0.0,
+    m_ac: float = 0.0,
 ) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     c = rng.normal(size=n)
     a = rng.binomial(1, 0.5, size=n).astype(float)
-    m = 0.5 * a + 0.4 * c + (1.0 + m_sd_a * a) * rng.normal(size=n)
+    m = 0.5 * a + 0.4 * c + m_ac * a * c + (1.0 + m_sd_a * a) * rng.normal(size=n)
     y = (
         0.3 * a
         + 0.5 * m
@@ -113,8 +114,9 @@ def test_mediator_node_components():
     data = _data(200, 5)
     result = lack_of_fit_battery(data, MEDIATOR, "A")
     parts = _components(result)
-    assert list(parts) == ["mean_curvature_C", "variance_BP"]
+    assert list(parts) == ["mean_curvature_C", "mean_interaction_AC", "variance_BP"]
     assert parts["mean_curvature_C"].df == (2, 200 - 5)
+    assert parts["mean_interaction_AC"].df == (1, 200 - 4)
     assert parts["variance_BP"].df == (2,)
     power = lack_of_fit_battery(_data(250, 6, m_sd_a=1.0), MEDIATOR, "A")
     assert power.warning
@@ -126,8 +128,30 @@ def test_mediator_node_without_covariate():
     result = lack_of_fit_battery(data, "M ~ A", "A", conditioning=())
     parts = _components(result)
     assert parts["mean_curvature_C"].status == "not_applicable"
+    assert parts["mean_interaction_AC"].status == "not_applicable"
     assert parts["variance_BP"].df == (1,)
     assert result.status == "ok"
+    assert result.min_adjusted_p == parts["variance_BP"].p_value
+
+
+def test_mediator_declared_interaction_is_not_applicable():
+    data = _data(150, 11)
+    result = lack_of_fit_battery(data, "M ~ A * C", "A")
+    parts = _components(result)
+    assert parts["mean_interaction_AC"].status == "not_applicable"
+    assert parts["mean_curvature_C"].status == "ok"
+    applicable = [c for c in result.components if c.status == "ok"]
+    assert [c.adjusted_p_value for c in applicable] == pytest.approx(
+        holm_adjust([c.p_value for c in applicable])
+    )
+
+
+def test_power_against_omitted_ac_interaction_on_mediator():
+    rejections = 0
+    for seed in range(20):
+        result = lack_of_fit_battery(_data(250, 7000 + seed, m_ac=0.5), MEDIATOR, "A")
+        rejections += _components(result)["mean_interaction_AC"].adjusted_p_value < 0.05
+    assert rejections >= 18
 
 
 def test_unavailable_with_two_conditioning_columns():
@@ -163,7 +187,7 @@ def test_holm_adjust():
     ("formula", "parent", "names"),
     [
         (OUTCOME, "M", ("mean_curvature_M", "mean_interaction_AM", "variance_BP")),
-        (MEDIATOR, "A", ("mean_curvature_C", "variance_BP")),
+        (MEDIATOR, "A", ("mean_curvature_C", "mean_interaction_AC", "variance_BP")),
     ],
 )
 def test_size_under_correct_linear_gaussian_model(formula, parent, names):
