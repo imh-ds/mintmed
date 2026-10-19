@@ -1,0 +1,32 @@
+{
+  "charter_sha256": null,
+  "combination_columns": [
+    "mechanism",
+    "n",
+    "node"
+  ],
+  "config_hash": "684093b1031c9d8c59bee1e32204d86a42a37778681b3966a6c8204dcfd09d21",
+  "expected_rows": 10800,
+  "experiment": "mintmed_information_diagnostic_calibration",
+  "git_commit": "8044f9d58cb57e5be7152b5ef76e79e2a17aef47",
+  "numpy": "2.4.6",
+  "observed_rows": 600,
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "python": "3.11.16",
+  "rows_written_this_run": 600,
+  "runner": "mintmed.experiments.information_diagnostic",
+  "runtime_seconds": 507.208934267,
+  "schema_version": 1,
+  "selection": {
+    "mechanisms": [
+      "E1_omitted_quadratic"
+    ],
+    "replicate_start": 100,
+    "replicate_stop": 200,
+    "sample_sizes": [
+      100,
+      250,
+      500
+    ]
+  }
+}

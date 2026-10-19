@@ -1,0 +1,95 @@
+{
+  "charter_sha256": null,
+  "combination_columns": [
+    "tool",
+    "cell_id",
+    "replicate"
+  ],
+  "config_hash": "e6dc06ede1b1332056f41208654c55e2d217f021a82fbaa227e749ada5a4faf3",
+  "expected_rows": 24000,
+  "experiment": "mintmed_comparator_benchmark",
+  "git_commit": null,
+  "observed_rows": 375,
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "python": "3.11.16",
+  "r_environment": {
+    "blas": "/usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3",
+    "dependencies": {
+      "Hmisc": "5.3.0",
+      "MASS": "7.3.65",
+      "Matrix": "1.7.5",
+      "boot": "1.3.32",
+      "lme4": "2.0.6",
+      "lpSolve": "5.6.23",
+      "mnormt": "2.1.2",
+      "mvtnorm": "1.4.2",
+      "numDeriv": "2016.8.1.1",
+      "pbivnorm": "0.6.0",
+      "quadprog": "1.5.8",
+      "sandwich": "3.1.3"
+    },
+    "lapack": "3.12.0",
+    "library": "/home/runner/work/_temp/r-comparator-lib",
+    "os": "Linux",
+    "packages": {
+      "jsonlite": "2.0.0",
+      "lavaan": "0.7.2",
+      "mediation": "4.5.1"
+    },
+    "pinned": {
+      "jsonlite": "2.0.0",
+      "lavaan": "0.7.2",
+      "mediation": "4.5.1"
+    },
+    "pins_match": true,
+    "platform": "x86_64-pc-linux-gnu",
+    "r_version": "4.6.1",
+    "r_version_string": "R version 4.6.1 (2026-06-24)",
+    "snapshot_date": "2026-09-28",
+    "snapshot_url": "https://packagemanager.posit.co/cran/__linux__/noble/2026-09-28"
+  },
+  "rows_written_this_run": 375,
+  "runner": "mintmed.experiments.comparator_benchmark",
+  "runtime_seconds": 1866.6085184429999,
+  "schema_version": 1,
+  "scripts_sha256": {
+    "common.R": "d8d4d3aa39dcdfb5bc1ec075568fb043ff324324ea284c691eefb2d6c3b6b368",
+    "pins.R": "5d8c870ffc96bd4a30ad4f0f87e6340e640ac67d75e111a523f5a0e613b4c2a4",
+    "run_lavaan.R": "4a0a1393eebaec502ddebaee9e549acd70c0a201c0546b3e36ba68da265f5790",
+    "run_mediation.R": "f70d6c6205438379ebc3bfaac4d085894bf6fcd621dc50547ac0a9132644d875",
+    "support_matrix.json": "c0be3171e9bf8ec74d6166c527a41c16b451bfb4fc954479c893384e3099902f"
+  },
+  "settings": {
+    "boot_sims": 399,
+    "config_bootstrap_replicates": 399,
+    "modes": [
+      "primary",
+      "secondary"
+    ],
+    "qb_sims": 1000,
+    "seed_offsets": {
+      "lavaan": 0,
+      "mediation": 0,
+      "mediation_reseed": 1000000007
+    },
+    "seed_rule": "set.seed((int(analysis_seed) + offset) mod 2147483647), Mersenne-Twister/Inversion/Rejection, before every fit; offset 0 for the comparators, RESEED_SEED_OFFSET for a noise-floor rerun",
+    "tool_modes": {
+      "lavaan": [
+        "primary",
+        "secondary"
+      ],
+      "mediation": [
+        "primary",
+        "secondary"
+      ],
+      "mediation_reseed": [
+        "primary"
+      ]
+    }
+  },
+  "tools": [
+    "mediation",
+    "lavaan",
+    "mediation_reseed"
+  ]
+}

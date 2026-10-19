@@ -1,0 +1,10 @@
+{
+  "charter_sha256": null,
+  "git_commit": "8044f9d58cb57e5be7152b5ef76e79e2a17aef47",
+  "python": "3.11.16",
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "recorded_at_utc": "2026-09-30T18:56:04.369267+00:00",
+  "total_runtime_seconds": 12064.550375694,
+  "shard_count": 18,
+  "note": "Synthesized from per-shard metadata.json files at aggregation time. total_runtime_seconds sums shard runtimes and is not parallel wall-clock time."
+}

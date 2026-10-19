@@ -1,0 +1,5 @@
+fixture_name,replicate,seed,sample_size,truth_method,status,failure_code,failure_message,runtime_seconds
+tied_score,0,15719744645363356097,50,closed_form,complete_with_warnings,,,0.05221329996129498
+sparse_events,0,4332059583516311182,50,closed_form,complete_with_warnings,,,0.027082599990535527
+missingness,0,10461129242051087437,50,closed_form,complete_with_warnings,,,0.012074800033587962
+opposing_paths,0,3128178372413310725,50,closed_form,complete_with_warnings,,,0.011651799955870956

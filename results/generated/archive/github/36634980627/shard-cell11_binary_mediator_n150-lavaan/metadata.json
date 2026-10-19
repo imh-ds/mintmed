@@ -1,0 +1,49 @@
+{
+  "charter_sha256": null,
+  "combination_columns": [
+    "tool",
+    "cell_id",
+    "replicate"
+  ],
+  "config_hash": "e07447b62d195278de3021b6fbcf90a78be8cf7e9ed0983d5dd558dfda621c06",
+  "expected_rows": 90,
+  "experiment": "mintmed_comparator_runtime_pilot",
+  "git_commit": null,
+  "observed_rows": 5,
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "python": "3.11.16",
+  "r_environment": {},
+  "rows_written_this_run": 5,
+  "runner": "mintmed.experiments.comparator_benchmark",
+  "runtime_seconds": 0.027278484999996522,
+  "schema_version": 1,
+  "scripts_sha256": {
+    "common.R": "d8d4d3aa39dcdfb5bc1ec075568fb043ff324324ea284c691eefb2d6c3b6b368",
+    "pins.R": "5d8c870ffc96bd4a30ad4f0f87e6340e640ac67d75e111a523f5a0e613b4c2a4",
+    "run_lavaan.R": "4a0a1393eebaec502ddebaee9e549acd70c0a201c0546b3e36ba68da265f5790",
+    "run_mediation.R": "f70d6c6205438379ebc3bfaac4d085894bf6fcd621dc50547ac0a9132644d875",
+    "support_matrix.json": "c0be3171e9bf8ec74d6166c527a41c16b451bfb4fc954479c893384e3099902f"
+  },
+  "settings": {
+    "boot_sims": 399,
+    "config_bootstrap_replicates": 399,
+    "modes": [
+      "primary",
+      "secondary"
+    ],
+    "qb_sims": 1000,
+    "seed_offsets": {
+      "lavaan": 0
+    },
+    "seed_rule": "set.seed((int(analysis_seed) + offset) mod 2147483647), Mersenne-Twister/Inversion/Rejection, before every fit; offset 0 for the comparators, RESEED_SEED_OFFSET for a noise-floor rerun",
+    "tool_modes": {
+      "lavaan": [
+        "primary",
+        "secondary"
+      ]
+    }
+  },
+  "tools": [
+    "lavaan"
+  ]
+}

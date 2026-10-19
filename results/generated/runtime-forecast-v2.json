@@ -1,0 +1,222 @@
+{
+  "experiment": "mintmed_runtime_forecast",
+  "forecast": {
+    "aggregate_pass": true,
+    "base_cpu_hours": 29.78832387814167,
+    "base_cpu_seconds": 107237.96596131002,
+    "budget_pass": true,
+    "ceiling_cpu_hours": 36.0,
+    "cell_count": 14,
+    "cell_runtimes": {
+      "cell01_linear_n100": {
+        "base_cpu_hours": 0.7317023161645837,
+        "cpu_seconds_per_dataset": 5.268256676385002,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 5.268256676385002
+      },
+      "cell02_linear_n250": {
+        "base_cpu_hours": 0.8227162755263889,
+        "cpu_seconds_per_dataset": 5.923557183790001,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 5.923557183790001
+      },
+      "cell03_no_a_to_m_n100": {
+        "base_cpu_hours": 0.8022485437298607,
+        "cpu_seconds_per_dataset": 5.776189514854996,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 5.776189514854996
+      },
+      "cell04_no_m_to_y_n100": {
+        "base_cpu_hours": 0.6740393845354166,
+        "cpu_seconds_per_dataset": 4.853083568654999,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 4.853083568654999
+      },
+      "cell05_no_mediation_n100": {
+        "base_cpu_hours": 0.9590685126180544,
+        "cpu_seconds_per_dataset": 6.9052932908499915,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 6.9052932908499915
+      },
+      "cell06_parallel_interaction_n150": {
+        "base_cpu_hours": 3.8609474995125,
+        "cpu_seconds_per_dataset": 27.798821996490002,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 27.798821996490002
+      },
+      "cell07_serial_three_n200": {
+        "base_cpu_hours": 1.3999498736472225,
+        "cpu_seconds_per_dataset": 10.07963909026,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 10.07963909026
+      },
+      "cell08_quadratic_n100": {
+        "base_cpu_hours": 2.0482208846715277,
+        "cpu_seconds_per_dataset": 14.747190369635,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 14.747190369635
+      },
+      "cell09_spline_n250": {
+        "base_cpu_hours": 3.039423080525696,
+        "cpu_seconds_per_dataset": 21.88384617978501,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 21.88384617978501
+      },
+      "cell10_moderated_n150": {
+        "base_cpu_hours": 10.43293086821389,
+        "cpu_seconds_per_dataset": 75.11710225114001,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 75.11710225114001
+      },
+      "cell11_binary_mediator_n150": {
+        "base_cpu_hours": 1.3603090312645838,
+        "cpu_seconds_per_dataset": 9.794225025105003,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 9.794225025105003
+      },
+      "cell12_mixed_binary_serial_n250": {
+        "base_cpu_hours": 1.7252205214124998,
+        "cpu_seconds_per_dataset": 12.42158775417,
+        "source": "results/generated/validation-matrix-36296143027/cell_summary.csv",
+        "source_kind": "cell_summary",
+        "wall_seconds_per_dataset": 12.42158775417
+      },
+      "cell13_a_path_only_n100": {
+        "base_cpu_hours": 0.9738077578472221,
+        "cpu_seconds_per_dataset": 7.011415856499999,
+        "source": "results/generated/pilot-36349462559/runtime-pilot-36349462559/runtime-pilot.json",
+        "source_kind": "pilot_json",
+        "wall_seconds_per_dataset": 7.012136227499994
+      },
+      "cell14_b_path_only_n100": {
+        "base_cpu_hours": 0.9577393284722221,
+        "cpu_seconds_per_dataset": 6.895723165,
+        "source": "results/generated/pilot-36349462559/runtime-pilot-36349462559/runtime-pilot.json",
+        "source_kind": "pilot_json",
+        "wall_seconds_per_dataset": 6.896344820500005
+      }
+    },
+    "datasets_per_cell": 500,
+    "datasets_per_shard": 50,
+    "matrix_bootstrap_refits": 2793000,
+    "matrix_complete_analyses": 2800000,
+    "matrix_point_fits": 7000,
+    "max_shard_wall_hours": 1.0954577411624586,
+    "projected_cpu_hours": 31.27774007204876,
+    "projected_cpu_seconds": 112599.86425937554,
+    "reference_platform": "github-actions ubuntu-latest",
+    "rerun_fraction": 0.05,
+    "shard_count": 140,
+    "shard_pass": true,
+    "shard_replicate_blocks": 10,
+    "shard_wall_ceiling_hours": 4.0,
+    "shard_wall_hours_by_cell": {
+      "cell01_linear_n100": 0.07682874319728128,
+      "cell02_linear_n250": 0.08638520893027085,
+      "cell03_no_a_to_m_n100": 0.08423609709163536,
+      "cell04_no_m_to_y_n100": 0.07077413537621875,
+      "cell05_no_mediation_n100": 0.10070219382489572,
+      "cell06_parallel_interaction_n150": 0.4053994874488125,
+      "cell07_serial_three_n200": 0.14699473673295835,
+      "cell08_quadratic_n100": 0.21506319289051043,
+      "cell09_spline_n250": 0.319139423455198,
+      "cell10_moderated_n150": 1.0954577411624586,
+      "cell11_binary_mediator_n150": 0.1428324482827813,
+      "cell12_mixed_binary_serial_n250": 0.1811481547483125,
+      "cell13_a_path_only_n100": 0.1022603199843749,
+      "cell14_b_path_only_n100": 0.10057169529895842
+    },
+    "slowest_shard_cell": "cell10_moderated_n150",
+    "status": "pass"
+  },
+  "forecast_settings": {
+    "bootstrap_replicates": 399,
+    "ceiling_cpu_hours": 36.0,
+    "cell_ids": [
+      "cell01_linear_n100",
+      "cell02_linear_n250",
+      "cell03_no_a_to_m_n100",
+      "cell04_no_m_to_y_n100",
+      "cell05_no_mediation_n100",
+      "cell06_parallel_interaction_n150",
+      "cell07_serial_three_n200",
+      "cell08_quadratic_n100",
+      "cell09_spline_n250",
+      "cell10_moderated_n150",
+      "cell11_binary_mediator_n150",
+      "cell12_mixed_binary_serial_n250",
+      "cell13_a_path_only_n100",
+      "cell14_b_path_only_n100"
+    ],
+    "datasets_per_cell": 500,
+    "reference_platform": "github-actions ubuntu-latest",
+    "replicate_blocks": 10,
+    "rerun_fraction": 0.05,
+    "shard_wall_ceiling_hours": 4.0
+  },
+  "git_commit": "b8ac24349f4a18ccd1d247d4ab91c12e82e9f88c",
+  "mode": "forecast_only",
+  "runtime_sources": [
+    {
+      "cells_measured": [
+        "cell01_linear_n100",
+        "cell02_linear_n250",
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100",
+        "cell06_parallel_interaction_n150",
+        "cell07_serial_three_n200",
+        "cell08_quadratic_n100",
+        "cell09_spline_n250",
+        "cell10_moderated_n150",
+        "cell11_binary_mediator_n150",
+        "cell12_mixed_binary_serial_n250"
+      ],
+      "cells_used": [
+        "cell01_linear_n100",
+        "cell02_linear_n250",
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100",
+        "cell06_parallel_interaction_n150",
+        "cell07_serial_three_n200",
+        "cell08_quadratic_n100",
+        "cell09_spline_n250",
+        "cell10_moderated_n150",
+        "cell11_binary_mediator_n150",
+        "cell12_mixed_binary_serial_n250"
+      ],
+      "kind": "cell_summary",
+      "sha256": "ca2faeb1601641bf659c02c90ae20ec4851e2d9c5386ccfb29c6d29d65354923",
+      "source": "results/generated/validation-matrix-36296143027/cell_summary.csv"
+    },
+    {
+      "cells_measured": [
+        "cell13_a_path_only_n100",
+        "cell14_b_path_only_n100"
+      ],
+      "cells_used": [
+        "cell13_a_path_only_n100",
+        "cell14_b_path_only_n100"
+      ],
+      "kind": "pilot_json",
+      "sha256": "b0a0b10e7c65f2ae5c8a617c81ef8f52f85b790a88e74537c39381ac7dcfb893",
+      "source": "results/generated/pilot-36349462559/runtime-pilot-36349462559/runtime-pilot.json"
+    }
+  ],
+  "schema_version": 1,
+  "source_config": "configs/mediation_validation_v2.yaml",
+  "source_config_hash": "0f2f738887b2a1669cf8c281e43fb9c258652291a4c50bbed9a009ffaafb953b",
+  "status": "pass"
+}

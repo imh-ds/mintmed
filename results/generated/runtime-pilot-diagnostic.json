@@ -1,0 +1,283 @@
+{
+  "cases": [
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell01_linear_n100",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 163782656,
+      "median_cpu_seconds": 11.40625,
+      "median_wall_seconds": 11.665801299997838,
+      "n": 100,
+      "repeat_count": 1,
+      "repeats": [
+        {
+          "analysis_seed": 1517040108547190271,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell01_linear_n100",
+          "config_hash": "06652c0f26343817e6d60644f523200d04d84c03c9f6e253ec942171ccb60eaa",
+          "cpu_seconds": 11.40625,
+          "data_seed": 9749156801862218311,
+          "draw_budget": 0,
+          "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+          "integration_method": "gaussian_linear_exact",
+          "n": 100,
+          "peak_rss_bytes": 163782656,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 11.665801299997838
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell02_linear_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 165810176,
+      "median_cpu_seconds": 12.265625,
+      "median_wall_seconds": 12.424915300012799,
+      "n": 250,
+      "repeat_count": 1,
+      "repeats": [
+        {
+          "analysis_seed": 12211192867706340728,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell02_linear_n250",
+          "config_hash": "68827394ccf11ad24a192d3b964bb11c22e110dbfd1fb524ce6fa558e5ef03e1",
+          "cpu_seconds": 12.265625,
+          "data_seed": 18393521947888680065,
+          "draw_budget": 0,
+          "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+          "integration_method": "gaussian_linear_exact",
+          "n": 250,
+          "peak_rss_bytes": 165810176,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 12.424915300012799
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "complete_with_warnings"
+      ],
+      "bootstrap_statuses": [
+        "ok"
+      ],
+      "cell_id": "cell07_serial_three_n200",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 193593344,
+      "median_cpu_seconds": 554.203125,
+      "median_wall_seconds": 582.9156158999831,
+      "n": 200,
+      "repeat_count": 1,
+      "repeats": [
+        {
+          "analysis_seed": 15914468360558903424,
+          "bootstrap_attempted": 399,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 399,
+          "bootstrap_requested": 399,
+          "cell_id": "cell07_serial_three_n200",
+          "config_hash": "308fea1fad9fc444d7cc2795fb8ffd4d08d8e7980f75e2c50e9d3570b2d59645",
+          "cpu_seconds": 554.203125,
+          "data_seed": 10285833840680880939,
+          "draw_budget": 512,
+          "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+          "integration_method": "sobol_blocked",
+          "n": 200,
+          "peak_rss_bytes": 193593344,
+          "point_fit_count": 4,
+          "repeat": 0,
+          "status": "complete",
+          "wall_seconds": 582.9156158999831
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "complete"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "integration_unresolved"
+      ],
+      "bootstrap_statuses": [],
+      "cell_id": "cell09_spline_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 464801792,
+      "median_cpu_seconds": 50.671875,
+      "median_wall_seconds": 55.200608800019836,
+      "n": 250,
+      "repeat_count": 1,
+      "repeats": [
+        {
+          "analysis_seed": 11183948589764991061,
+          "bootstrap_attempted": 0,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 0,
+          "bootstrap_requested": 0,
+          "cell_id": "cell09_spline_n250",
+          "config_hash": "1aa347dde42f1784a6e44d139a1165dac80047a058f78951da7a4c1e22810c1e",
+          "cpu_seconds": 50.671875,
+          "data_seed": 7239412666220895527,
+          "draw_budget": 4096,
+          "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+          "integration_method": "sobol_blocked",
+          "n": 250,
+          "peak_rss_bytes": 464801792,
+          "point_fit_count": 2,
+          "repeat": 0,
+          "status": "blocked",
+          "wall_seconds": 55.200608800019836
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "blocked"
+      ]
+    },
+    {
+      "analysis_statuses": [
+        "integration_unresolved"
+      ],
+      "bootstrap_statuses": [],
+      "cell_id": "cell12_mixed_binary_serial_n250",
+      "error_messages": [],
+      "error_types": [],
+      "max_peak_rss_bytes": 431636480,
+      "median_cpu_seconds": 121.640625,
+      "median_wall_seconds": 128.0485980999947,
+      "n": 250,
+      "repeat_count": 1,
+      "repeats": [
+        {
+          "analysis_seed": 782119402276928458,
+          "bootstrap_attempted": 0,
+          "bootstrap_failed": 0,
+          "bootstrap_fit_count": 0,
+          "bootstrap_requested": 0,
+          "cell_id": "cell12_mixed_binary_serial_n250",
+          "config_hash": "3c31f00bd56424677ce06137bf506dc461c53542250e3106e65dfbd91cc7641a",
+          "cpu_seconds": 121.640625,
+          "data_seed": 9102382603507042662,
+          "draw_budget": 4096,
+          "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+          "integration_method": "sobol_blocked",
+          "n": 250,
+          "peak_rss_bytes": 431636480,
+          "point_fit_count": 3,
+          "repeat": 0,
+          "status": "blocked",
+          "wall_seconds": 128.0485980999947
+        }
+      ],
+      "report_serialized": true,
+      "statuses": [
+        "blocked"
+      ]
+    }
+  ],
+  "environment": {
+    "mintmed": "0.1.0",
+    "numpy": "2.5.1",
+    "pandas": "3.0.3",
+    "patsy": "1.0.3",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.14",
+    "scipy": "1.18.0",
+    "statsmodels": "0.14.6"
+  },
+  "experiment": "mintmed_task14_runtime_pilot",
+  "forecast": {
+    "budget_pass": false,
+    "ceiling_cpu_hours": 12.0,
+    "incomplete_pilot_cells": [
+      "cell09_spline_n250",
+      "cell12_mixed_binary_serial_n250"
+    ],
+    "matrix_bootstrap_refits": 957600,
+    "matrix_complete_analyses": 960000,
+    "matrix_point_fits": 2400,
+    "missing_pilot_cells": [],
+    "proxy_map": {
+      "cell01_linear_n100": [
+        "cell01_linear_n100",
+        "cell03_no_a_to_m_n100",
+        "cell04_no_m_to_y_n100",
+        "cell05_no_mediation_n100"
+      ],
+      "cell02_linear_n250": [
+        "cell02_linear_n250"
+      ],
+      "cell07_serial_three_n200": [
+        "cell06_parallel_interaction_n150",
+        "cell07_serial_three_n200"
+      ],
+      "cell09_spline_n250": [
+        "cell08_quadratic_n100",
+        "cell09_spline_n250"
+      ],
+      "cell12_mixed_binary_serial_n250": [
+        "cell10_moderated_n150",
+        "cell11_binary_mediator_n150",
+        "cell12_mixed_binary_serial_n250"
+      ]
+    },
+    "reason": "unsupported_python_runtime",
+    "rerun_fraction": 0.05,
+    "runtime_supported": false,
+    "status": "blocked"
+  },
+  "git_commit": "8911b09f7ae0f17099a6220678e8cdc465701e5b",
+  "pilot_settings": {
+    "bootstrap_replicates": 399,
+    "ceiling_cpu_hours": 12.0,
+    "cell_ids": [
+      "cell01_linear_n100",
+      "cell02_linear_n250",
+      "cell07_serial_three_n200",
+      "cell09_spline_n250",
+      "cell12_mixed_binary_serial_n250"
+    ],
+    "integration_draws": 256,
+    "integration_tolerance": 1e-08,
+    "repeats": 1,
+    "rerun_fraction": 0.05
+  },
+  "runtime_supported": false,
+  "schema_version": 1,
+  "source_config": "configs/mediation_validation.yaml",
+  "source_config_hash": "2a86c29394f869921f17f6cafa1a89cfd1bf70b3a141f6129d8ecf45d5a4ea22",
+  "status": "blocked",
+  "supported_python": ">=3.11,<3.12"
+}

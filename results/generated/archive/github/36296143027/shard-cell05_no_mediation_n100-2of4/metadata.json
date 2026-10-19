@@ -1,0 +1,17 @@
+{
+  "charter_sha256": null,
+  "combination_columns": [
+    "cell_id",
+    "replicate"
+  ],
+  "config_hash": "176be1124d5b0525107af4a5b5cc265c805fdb82b9caeef63ee2716aaa968f94",
+  "expected_rows": 2400,
+  "experiment": "mintmed_baseline_validation",
+  "git_commit": null,
+  "observed_rows": 50,
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "python": "3.11.16",
+  "runtime_seconds": 352.114044746,
+  "schema_version": 1,
+  "stress_separate": false
+}

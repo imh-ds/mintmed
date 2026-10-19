@@ -1,0 +1,29 @@
+schema_version: 1
+experiment: mintmed_comparator_benchmark_mintmed
+master_seed: 20260927
+replicates: 500
+bootstrap_replicates: 399
+bootstrap_mode: standard
+integration_draws: 256
+integration_tolerance: 0.001
+max_seconds: 600
+memory_budget_mb: 1024
+cell_ids:
+- cell15_a_path_only_n250
+- cell16_b_path_only_n250
+stress:
+  enabled: false
+  replicates: 1
+  sample_size: 50
+  fixture_names:
+  - tied_score
+  - sparse_events
+  - missingness
+  - opposing_paths
+gates:
+  binary_abs_bias_probability: 0.02
+  continuous_abs_bias_sd: 0.05
+  coverage_family_alpha: 0.05
+  coverage_nominal: 0.95
+  null_false_zero_wilson_upper: 0.1
+  unavailable_or_fatal_max: 0.01

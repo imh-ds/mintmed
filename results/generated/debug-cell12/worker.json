@@ -1,0 +1,28 @@
+{
+  "analysis_status": "integration_unresolved",
+  "bootstrap_status": null,
+  "failure_counts": {},
+  "measurement": {
+    "analysis_seed": 782119402276928458,
+    "bootstrap_attempted": 0,
+    "bootstrap_failed": 0,
+    "bootstrap_fit_count": 0,
+    "bootstrap_requested": 0,
+    "cell_id": "cell12_mixed_binary_serial_n250",
+    "config_hash": "2a86c29394f869921f17f6cafa1a89cfd1bf70b3a141f6129d8ecf45d5a4ea22",
+    "cpu_seconds": 84.203125,
+    "data_seed": 9102382603507042662,
+    "draw_budget": 4096,
+    "git_commit": "6122a76b01bc7735ea154a11400e0a3866e72f9b",
+    "integration_method": "sobol_blocked",
+    "n": 250,
+    "peak_rss_bytes": 0,
+    "point_fit_count": 3,
+    "repeat": 0,
+    "status": "blocked",
+    "wall_seconds": 85.03539099998306
+  },
+  "report_serialized": true,
+  "source_config_hash": "2a86c29394f869921f17f6cafa1a89cfd1bf70b3a141f6129d8ecf45d5a4ea22",
+  "status": "blocked"
+}
